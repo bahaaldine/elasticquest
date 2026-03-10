@@ -1,0 +1,9 @@
+node_modules/
+.next/
+dist/
+.git/
+*.md
+.elastic-quest-*
+.data/
+packages/cli/dist/
+packages/web/.next/

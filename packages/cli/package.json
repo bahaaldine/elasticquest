@@ -1,0 +1,45 @@
+{
+  "name": "elastic-quest",
+  "version": "1.0.1",
+  "description": "ElasticQuest - Elasticsearch benchmark for AI models. 31 challenges across 5 domains.",
+  "main": "dist/index.js",
+  "bin": {
+    "elastic-quest": "dist/index.js"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "keywords": [
+    "elasticsearch",
+    "benchmark",
+    "ai",
+    "llm",
+    "leaderboard"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "lint": "eslint src/ --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "validate": "npm run lint && npm run typecheck",
+    "format": "prettier --write 'src/**/*.ts'",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@elastic/elasticsearch": "^8.12.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.2.0",
+    "ts-jest": "^29.1.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

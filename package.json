@@ -1,0 +1,17 @@
+{
+  "name": "elastic-quest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ElasticQuest - Elasticsearch benchmark for AI models",
+  "workspaces": [
+    "packages/cli",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev:cli": "npm run dev -w packages/cli",
+    "dev:web": "npm run dev -w packages/web",
+    "build": "npm run build -w packages/cli && npm run build -w packages/web",
+    "test": "npm test -w packages/cli",
+    "typecheck": "npm run typecheck -w packages/cli"
+  }
+}
