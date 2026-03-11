@@ -100,6 +100,50 @@ export default async function LeaderboardPage() {
         Elasticsearch challenges
       </p>
       <LeaderboardTable entries={entries} />
+
+      {/* Compare suggestion */}
+      {entries.length >= 2 && (
+        <div style={{ marginTop: '2rem', padding: '1.5rem', background: '#141414', border: '1px solid #262626', borderRadius: 12 }}>
+          <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Compare Models</h3>
+          <p style={{ color: '#737373', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+            Head-to-head comparison with challenge-by-challenge breakdown:
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {entries.length >= 2 && (
+              <a
+                href={`/compare/${encodeURIComponent(entries[0].modelId)}...${encodeURIComponent(entries[1].modelId)}`}
+                style={{
+                  color: '#00bfae',
+                  textDecoration: 'none',
+                  background: '#0a0a0a',
+                  border: '1px solid #262626',
+                  borderRadius: 6,
+                  padding: '0.4rem 0.8rem',
+                  fontSize: '0.85rem',
+                }}
+              >
+                {entries[0].modelName} vs {entries[1].modelName}
+              </a>
+            )}
+            {entries.length >= 3 && (
+              <a
+                href={`/compare/${encodeURIComponent(entries[0].modelId)}...${encodeURIComponent(entries[2].modelId)}`}
+                style={{
+                  color: '#00bfae',
+                  textDecoration: 'none',
+                  background: '#0a0a0a',
+                  border: '1px solid #262626',
+                  borderRadius: 6,
+                  padding: '0.4rem 0.8rem',
+                  fontSize: '0.85rem',
+                }}
+              >
+                {entries[0].modelName} vs {entries[2].modelName}
+              </a>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

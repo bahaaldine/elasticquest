@@ -1,6 +1,9 @@
 import { getBestModelScore } from '@/lib/store';
 import type { ChallengeDetail } from '@/lib/store';
 import { notFound } from 'next/navigation';
+import { RadarChart } from '@/components/radar-chart';
+import { DifficultyCurve } from '@/components/difficulty-curve';
+import { BadgeDisplay, computeBadges } from '@/components/badges';
 
 export const dynamic = 'force-dynamic';
 
@@ -144,6 +147,67 @@ export default async function ModelDetailPage({
             <div style={{ color: '#737373', fontSize: '0.75rem' }}>{s.sub}</div>
           </div>
         ))}
+      </div>
+
+      {/* Badges */}
+      <div style={{ marginBottom: '2rem' }}>
+        <BadgeDisplay badges={computeBadges({
+          domainScores: score.domainScores,
+          overallPercentage: score.percentage,
+          avgLatencyMs: score.avgLatencyMs,
+          correctCount: passed,
+          totalCount: challenges.length,
+        })} />
+      </div>
+
+      {/* Charts */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+        gap: '2rem',
+        marginBottom: '2.5rem',
+      }}>
+        {/* Radar chart */}
+        <div style={{
+          background: '#141414',
+          border: '1px solid #262626',
+          borderRadius: 12,
+          padding: '1.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+        }}>
+          <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', color: '#a3a3a3' }}>Domain Strengths</h3>
+          <RadarChart
+            data={score.domainScores.map((ds) => ({
+              label: (DOMAIN_LABELS[ds.domain] ?? ds.domain).replace(' / SIEM', ''),
+              value: ds.percentage,
+            }))}
+            size={320}
+          />
+        </div>
+
+        {/* Difficulty curve */}
+        <div style={{
+          background: '#141414',
+          border: '1px solid #262626',
+          borderRadius: 12,
+          padding: '1.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+        }}>
+          <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: '#a3a3a3' }}>Difficulty Curve</h3>
+          <DifficultyCurve
+            data={score.difficultyScores.map((ds) => ({
+              difficulty: ds.difficulty,
+              percentage: ds.percentage,
+              count: ds.challengeCount,
+            }))}
+            width={440}
+            height={220}
+          />
+        </div>
       </div>
 
       {/* Domain breakdown */}
