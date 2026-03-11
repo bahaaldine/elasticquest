@@ -54,8 +54,13 @@ function LeaderboardTable({ entries }: { entries: LeaderboardEntry[] }) {
           <tr key={entry.modelId}>
             <RankBadge rank={entry.rank} />
             <td className="model-col">
-              {entry.modelName}
-              <span className="provider-tag">{entry.provider}</span>
+              <a
+                href={`/leaderboard/${encodeURIComponent(entry.modelId)}`}
+                style={{ color: 'inherit', textDecoration: 'none' }}
+              >
+                {entry.modelName}
+                <span className="provider-tag">{entry.provider}</span>
+              </a>
             </td>
             <td className="score-col">
               <PercentBar pct={entry.percentage} />

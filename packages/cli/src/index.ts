@@ -223,6 +223,17 @@ async function submitToLeaderboard(result: BenchmarkResult, apiUrl?: string): Pr
         totalOutputTokens: result.totalOutputTokens,
         domainScores: result.domainScores,
         difficultyScores: result.difficultyScores,
+        challengeScores: result.challengeScores.map((cs) => ({
+          challengeId: cs.challengeId,
+          domain: cs.domain,
+          difficulty: cs.difficulty,
+          title: cs.title,
+          score: cs.score,
+          maxScore: cs.maxScore,
+          correct: cs.correct,
+          feedback: cs.feedback,
+          latencyMs: cs.latencyMs,
+        })),
       }),
     });
     if (response.ok) {

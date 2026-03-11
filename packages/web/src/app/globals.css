@@ -287,6 +287,10 @@ body {
   font-weight: 600;
 }
 
+.model-col a:hover {
+  color: var(--accent) !important;
+}
+
 .provider-tag {
   font-size: 0.75rem;
   color: var(--text-muted);

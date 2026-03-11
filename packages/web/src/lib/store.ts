@@ -30,7 +30,20 @@ export interface ScoreSubmission {
     challengeCount: number;
     correctCount: number;
   }[];
+  challengeScores?: ChallengeDetail[];
   submittedAt?: string;
+}
+
+export interface ChallengeDetail {
+  challengeId: string;
+  domain: string;
+  difficulty: string;
+  title: string;
+  score: number;
+  maxScore: number;
+  correct: boolean;
+  feedback: string;
+  latencyMs: number;
 }
 
 export interface LeaderboardEntry {
@@ -142,4 +155,13 @@ export async function getModelScores(modelId: string): Promise<ScoreSubmission[]
     scores.push(doc.data() as ScoreSubmission);
   });
   return scores;
+}
+
+/**
+ * Get the best submission for a model (the one shown on leaderboard).
+ */
+export async function getBestModelScore(modelId: string): Promise<ScoreSubmission | null> {
+  const scores = await getModelScores(modelId);
+  if (scores.length === 0) return null;
+  return scores.reduce((best, s) => s.percentage > best.percentage ? s : best);
 }
