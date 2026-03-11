@@ -1,3 +1,5 @@
+import { ChallengeOfTheWeek } from '@/components/challenge-of-week';
+
 const DOMAINS = [
   {
     icon: '&#128269;',
@@ -37,14 +39,16 @@ const DOMAINS = [
   },
 ];
 
-export default function HomePage() {
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage() {
   return (
     <>
       {/* Hero */}
       <section className="hero">
         <h1>How well does your AI know Elasticsearch?</h1>
         <p>
-          49 challenges across 6 domains. Benchmark any LLM on real Elasticsearch
+          53 challenges across 6 domains. Benchmark any LLM on real Elasticsearch
           query tasks. Compare models on the public leaderboard.
         </p>
         <div className="install-box">
@@ -91,9 +95,14 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Challenge of the Week */}
+      <section style={{ maxWidth: 1100, margin: '0 auto', padding: '2rem 2rem 0' }}>
+        <ChallengeOfTheWeek />
+      </section>
+
       {/* Domains */}
       <section className="domains-section">
-        <h2>6 Domains, 49 Challenges</h2>
+        <h2>6 Domains, 53 Challenges</h2>
         <p className="subtitle">
           From beginner match queries to expert-level hybrid vector search with nested aggregations
         </p>

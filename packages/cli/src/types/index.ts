@@ -102,6 +102,8 @@ export interface Challenge {
   validate: (response: SearchResponse, backend: ElasticBackend) => Promise<ValidationResult>;
   maxScore: number;
   timeLimitMs: number;
+  multiTurn?: boolean;
+  discoveryPrompt?: string;
 }
 
 export interface ValidationResult {

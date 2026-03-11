@@ -221,6 +221,7 @@ async function submitToLeaderboard(result: BenchmarkResult, apiUrl?: string): Pr
         avgLatencyMs: result.avgLatencyMs,
         totalInputTokens: result.totalInputTokens,
         totalOutputTokens: result.totalOutputTokens,
+        costUsd: result.costUsd,
         domainScores: result.domainScores,
         difficultyScores: result.difficultyScores,
         challengeScores: result.challengeScores.map((cs) => ({

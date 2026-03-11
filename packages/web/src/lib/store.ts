@@ -31,6 +31,7 @@ export interface ScoreSubmission {
     correctCount: number;
   }[];
   challengeScores?: ChallengeDetail[];
+  costUsd?: number;
   submittedAt?: string;
 }
 
@@ -60,6 +61,8 @@ export interface LeaderboardEntry {
   domainScores: Record<string, number>;
   submittedAt: string;
   runCount: number;
+  costUsd?: number;
+  scorePerDollar?: number;
 }
 
 // --- Firestore ---
@@ -134,6 +137,10 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
       domainScores,
       submittedAt: best.submittedAt ?? new Date().toISOString(),
       runCount,
+      costUsd: best.costUsd,
+      scorePerDollar: best.costUsd && best.costUsd > 0
+        ? Math.round(best.percentage / best.costUsd)
+        : undefined,
     });
   }
 
@@ -155,6 +162,63 @@ export async function getModelScores(modelId: string): Promise<ScoreSubmission[]
     scores.push(doc.data() as ScoreSubmission);
   });
   return scores;
+}
+
+/**
+ * Get all runs for a model, sorted by date descending.
+ */
+export async function getAllModelRuns(modelId: string): Promise<ScoreSubmission[]> {
+  const db = getDb();
+  const snapshot = await db
+    .collection(COLLECTION)
+    .where('modelId', '==', modelId)
+    .get();
+
+  const scores: ScoreSubmission[] = [];
+  snapshot.forEach((doc) => {
+    scores.push(doc.data() as ScoreSubmission);
+  });
+  scores.sort((a, b) => {
+    const dateA = new Date(a.submittedAt ?? 0).getTime();
+    const dateB = new Date(b.submittedAt ?? 0).getTime();
+    return dateB - dateA;
+  });
+  return scores;
+}
+
+/**
+ * Get challenge pass rates across all models.
+ */
+export async function getChallengePassRates(): Promise<Record<string, { passed: number; total: number; models: string[] }>> {
+  const db = getDb();
+  const snapshot = await db.collection(COLLECTION).get();
+  const rates: Record<string, { passed: number; total: number; models: string[] }> = {};
+
+  // Use best run per model
+  const bestByModel = new Map<string, ScoreSubmission>();
+  snapshot.forEach((doc) => {
+    const s = doc.data() as ScoreSubmission;
+    const existing = bestByModel.get(s.modelId);
+    if (!existing || s.percentage > existing.percentage) {
+      bestByModel.set(s.modelId, s);
+    }
+  });
+
+  for (const [modelId, submission] of bestByModel) {
+    if (!submission.challengeScores) continue;
+    for (const cs of submission.challengeScores) {
+      if (!rates[cs.challengeId]) {
+        rates[cs.challengeId] = { passed: 0, total: 0, models: [] };
+      }
+      rates[cs.challengeId].total++;
+      if (cs.correct) {
+        rates[cs.challengeId].passed++;
+        rates[cs.challengeId].models.push(modelId);
+      }
+    }
+  }
+
+  return rates;
 }
 
 /**

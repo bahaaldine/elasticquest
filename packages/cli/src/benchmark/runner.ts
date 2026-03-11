@@ -16,6 +16,7 @@ import type {
 import { SimulatedBackend } from '../elastic/simulated-backend';
 import { RealBackend } from '../elastic/real-backend';
 import { getAllChallenges } from '../challenges';
+import { fetchOpenRouterModels } from './openrouter';
 
 const SYSTEM_PROMPT = `You are being evaluated on your ability to write Elasticsearch queries.
 
@@ -87,7 +88,7 @@ export class BenchmarkRunner {
       }
     }
 
-    return this.buildResult(challengeScores);
+    return await this.buildResult(challengeScores);
   }
 
   private async runChallenge(challenge: Challenge): Promise<ChallengeScore> {
@@ -111,9 +112,6 @@ export class BenchmarkRunner {
       await this.backend.putPipeline(`${challenge.id}-pipeline`, challenge.pipeline);
     }
 
-    // Build prompt for the model
-    const prompt = this.buildPrompt(challenge);
-
     let rawResponse = '';
     let parsedQuery: Record<string, unknown> | null = null;
     let latencyMs = 0;
@@ -122,11 +120,33 @@ export class BenchmarkRunner {
     let error: string | null = null;
 
     try {
-      const response = await this.model.complete(prompt);
-      rawResponse = response.content;
-      latencyMs = response.latencyMs;
-      inputTokens = response.inputTokens ?? 0;
-      outputTokens = response.outputTokens ?? 0;
+      // Multi-turn: first let the model explore, then ask for the query
+      if (challenge.multiTurn && challenge.discoveryPrompt) {
+        const discoveryResponse = await this.model.complete(
+          challenge.discoveryPrompt + `\n\nINDEX: ${challenge.indexName}\n\nMAPPING:\n${JSON.stringify(challenge.mapping ?? {}, null, 2)}\n\nSAMPLE DOCUMENTS (first 2):\n${challenge.seedData.slice(0, 2).map((d) => JSON.stringify(d._source, null, 2)).join('\n')}`,
+        );
+        latencyMs += discoveryResponse.latencyMs;
+        inputTokens += discoveryResponse.inputTokens ?? 0;
+        outputTokens += discoveryResponse.outputTokens ?? 0;
+
+        // Now build the actual query prompt with the discovery context
+        const queryPrompt = this.buildPrompt(challenge) +
+          `\n\nYour earlier analysis of the data:\n${discoveryResponse.content}\n\nNow respond with ONLY the JSON query body:`;
+
+        const response = await this.model.complete(queryPrompt);
+        rawResponse = response.content;
+        latencyMs += response.latencyMs;
+        inputTokens += response.inputTokens ?? 0;
+        outputTokens += response.outputTokens ?? 0;
+      } else {
+        // Standard single-turn
+        const prompt = this.buildPrompt(challenge);
+        const response = await this.model.complete(prompt);
+        rawResponse = response.content;
+        latencyMs = response.latencyMs;
+        inputTokens = response.inputTokens ?? 0;
+        outputTokens = response.outputTokens ?? 0;
+      }
 
       // Parse the query from model response
       parsedQuery = this.extractJson(rawResponse);
@@ -291,7 +311,7 @@ Respond with ONLY the JSON query body for the _search API:`;
     return null;
   }
 
-  private buildResult(scores: ChallengeScore[]): BenchmarkResult {
+  private async buildResult(scores: ChallengeScore[]): Promise<BenchmarkResult> {
     const totalScore = scores.reduce((sum, s) => sum + s.score, 0);
     const maxPossibleScore = scores.reduce((sum, s) => sum + s.maxScore, 0);
     const correctChallenges = scores.filter((s) => s.correct).length;
@@ -344,6 +364,16 @@ Respond with ONLY the JSON query body for the _search API:`;
       },
     );
 
+    const totalInputTokens = scores.reduce((sum, s) => sum + s.inputTokens, 0);
+    const totalOutputTokens = scores.reduce((sum, s) => sum + s.outputTokens, 0);
+
+    // Compute cost for OpenRouter models
+    let costUsd: number | undefined;
+    if (this.config.modelId.startsWith('openrouter:')) {
+      const orModelId = this.config.modelId.replace('openrouter:', '');
+      costUsd = await this.computeCost(orModelId, totalInputTokens, totalOutputTokens);
+    }
+
     return {
       modelId: this.config.modelId,
       modelName: this.model.name,
@@ -355,11 +385,30 @@ Respond with ONLY the JSON query body for the _search API:`;
       totalChallenges: scores.length,
       correctChallenges,
       avgLatencyMs,
-      totalInputTokens: scores.reduce((sum, s) => sum + s.inputTokens, 0),
-      totalOutputTokens: scores.reduce((sum, s) => sum + s.outputTokens, 0),
+      totalInputTokens,
+      totalOutputTokens,
+      costUsd,
       domainScores,
       difficultyScores,
       challengeScores: scores,
     };
+  }
+
+  private async computeCost(
+    orModelId: string,
+    inputTokens: number,
+    outputTokens: number,
+  ): Promise<number | undefined> {
+    try {
+      const models = await fetchOpenRouterModels();
+      const model = models.find((m) => m.id === orModelId);
+      if (!model) return undefined;
+      const promptPrice = parseFloat(model.pricing.prompt);
+      const completionPrice = parseFloat(model.pricing.completion);
+      const cost = inputTokens * promptPrice + outputTokens * completionPrice;
+      return Math.round(cost * 1_000_000) / 1_000_000; // 6 decimal places
+    } catch {
+      return undefined;
+    }
   }
 }

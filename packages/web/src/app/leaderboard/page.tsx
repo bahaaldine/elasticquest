@@ -55,7 +55,7 @@ function LeaderboardTable({ entries }: { entries: LeaderboardEntry[] }) {
             <RankBadge rank={entry.rank} />
             <td className="model-col">
               <a
-                href={`/leaderboard/${encodeURIComponent(entry.modelId)}`}
+                href={`/models/${encodeURIComponent(entry.modelId)}`}
                 style={{ color: 'inherit', textDecoration: 'none' }}
               >
                 {entry.modelName}
@@ -96,9 +96,21 @@ export default async function LeaderboardPage() {
     <div className="leaderboard-page">
       <h1>Model Leaderboard</h1>
       <p className="subtitle">
-        Best scores across {entries.length} model{entries.length !== 1 ? 's' : ''} on 49
+        Best scores across {entries.length} model{entries.length !== 1 ? 's' : ''} on 53
         Elasticsearch challenges
       </p>
+      {/* Tab navigation */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+        <a href="/leaderboard" style={{
+          padding: '0.5rem 1rem', borderRadius: 6, fontSize: '0.85rem',
+          background: '#00bfae', border: '1px solid #00bfae', color: '#0a0a0a', textDecoration: 'none', fontWeight: 600,
+        }}>By Score</a>
+        <a href="/leaderboard/efficiency" style={{
+          padding: '0.5rem 1rem', borderRadius: 6, fontSize: '0.85rem',
+          background: '#141414', border: '1px solid #262626', color: '#737373', textDecoration: 'none',
+        }}>By Efficiency</a>
+      </div>
+
       <LeaderboardTable entries={entries} />
 
       {/* Compare suggestion */}

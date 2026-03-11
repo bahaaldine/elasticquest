@@ -71,6 +71,11 @@ const CHALLENGES = [
   { id: 'sec-3-rare-domains', domain: 'security', difficulty: 'intermediate', title: 'DNS Threat Hunting', desc: 'Rare terms aggregation to find unusual domain queries' },
   { id: 'sec-4-alert-triage', domain: 'security', difficulty: 'advanced', title: 'Alert Severity Triage', desc: 'Filters aggregation to categorize alerts by severity range' },
   { id: 'sec-5-correlation', domain: 'security', difficulty: 'advanced', title: 'Compromised Accounts', desc: 'Terms + sub-agg to find users with both failed and successful logins' },
+  // Multi-turn (4)
+  { id: 'mt-1-discover-and-search', domain: 'full-text-search', difficulty: 'intermediate', title: 'Discover Schema, Then Search (Multi-Turn)', desc: 'Explore unknown index schema, then find matching documents' },
+  { id: 'mt-2-explore-and-aggregate', domain: 'aggregations', difficulty: 'advanced', title: 'Explore Data, Then Aggregate (Multi-Turn)', desc: 'Discover non-obvious field names, then compute revenue per region' },
+  { id: 'mt-3-unknown-logs', domain: 'observability', difficulty: 'advanced', title: 'Unknown Log Schema (Multi-Turn)', desc: 'Investigate logs with non-standard field names (ts, severity, svc)' },
+  { id: 'mt-4-investigate', domain: 'security', difficulty: 'expert', title: 'Security Investigation (Multi-Turn)', desc: 'Discover auth schema, find IPs with 3+ failed login attempts' },
 ];
 
 // Group by domain
@@ -81,7 +86,7 @@ export default function ChallengesPage() {
     <div className="leaderboard-page">
       <h1>Challenge Catalog</h1>
       <p className="subtitle">
-        49 Elasticsearch challenges across 6 domains and 4 difficulty levels
+        53 Elasticsearch challenges across 6 domains and 4 difficulty levels
       </p>
 
       {/* Stats */}

@@ -83,6 +83,7 @@ export interface BenchmarkResult {
   avgLatencyMs: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  costUsd?: number;
   domainScores: DomainScore[];
   difficultyScores: DifficultyScore[];
   challengeScores: ChallengeScore[];
