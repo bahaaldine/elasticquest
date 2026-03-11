@@ -259,4 +259,128 @@ Size 0.`,
     maxScore: 100,
     timeLimitMs: 60000,
   },
+
+  // --- MORE ---
+  {
+    id: 'aggs-8-percentiles',
+    domain: 'aggregations',
+    difficulty: 'advanced',
+    title: 'Latency Percentiles (p50/p95/p99)',
+    description: `Compute the p50, p95, and p99 of the "response_time_ms" field across all API requests. Use a percentiles aggregation named "latency_pcts" with percents [50, 95, 99]. Size 0.`,
+    hints: ['Use percentiles agg with field and percents array', 'The result has a "values" object with the percentile keys'],
+    indexName: 'eq-requests',
+    mapping: { properties: { endpoint: { type: 'keyword' }, response_time_ms: { type: 'integer' }, status: { type: 'integer' } } },
+    seedData: [
+      { _id: '1', _index: 'eq-requests', _source: { endpoint: '/api/users', response_time_ms: 45, status: 200 } },
+      { _id: '2', _index: 'eq-requests', _source: { endpoint: '/api/users', response_time_ms: 52, status: 200 } },
+      { _id: '3', _index: 'eq-requests', _source: { endpoint: '/api/orders', response_time_ms: 120, status: 200 } },
+      { _id: '4', _index: 'eq-requests', _source: { endpoint: '/api/users', response_time_ms: 38, status: 200 } },
+      { _id: '5', _index: 'eq-requests', _source: { endpoint: '/api/search', response_time_ms: 230, status: 200 } },
+      { _id: '6', _index: 'eq-requests', _source: { endpoint: '/api/orders', response_time_ms: 89, status: 200 } },
+      { _id: '7', _index: 'eq-requests', _source: { endpoint: '/api/search', response_time_ms: 450, status: 500 } },
+      { _id: '8', _index: 'eq-requests', _source: { endpoint: '/api/users', response_time_ms: 41, status: 200 } },
+      { _id: '9', _index: 'eq-requests', _source: { endpoint: '/api/search', response_time_ms: 1200, status: 504 } },
+      { _id: '10', _index: 'eq-requests', _source: { endpoint: '/api/orders', response_time_ms: 95, status: 200 } },
+    ],
+    validate: async (response: SearchResponse): Promise<{ correct: boolean; score: number; maxScore: number; feedback: string }> => {
+      let score = 0;
+      if (response.hits.hits.length === 0) score += 20;
+      const agg = response.aggregations?.latency_pcts;
+      if (!agg) return { correct: false, score, maxScore: 100, feedback: 'Missing "latency_pcts" percentiles aggregation.' };
+      const values = (agg as unknown as { values: Record<string, number> }).values;
+      if (!values) return { correct: false, score: score + 10, maxScore: 100, feedback: 'Aggregation exists but missing values. Use percents: [50, 95, 99].' };
+      score += 30;
+      if (values['50'] !== undefined) score += 15;
+      if (values['95'] !== undefined) score += 15;
+      if (values['99'] !== undefined) score += 15;
+      const correct = score >= 90;
+      return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `Percentiles computed: p50=${values['50']}, p95=${values['95']}, p99=${values['99']}.` : `Score: ${score}/100. Need percentiles agg with percents [50, 95, 99].` };
+    },
+    maxScore: 100,
+    timeLimitMs: 45000,
+  },
+  {
+    id: 'aggs-9-filters',
+    domain: 'aggregations',
+    difficulty: 'advanced',
+    title: 'Named Filters Aggregation',
+    description: `Categorize API requests by status code range using a filters aggregation named "status_groups" with these named filters:
+- "success": range status_code 200-299
+- "client_error": range status_code 400-499
+- "server_error": range status_code 500-599
+
+Size 0.`,
+    hints: ['Use filters agg with named filters object (not array)', 'Each filter is a range query on status_code'],
+    indexName: 'eq-requests',
+    mapping: { properties: { endpoint: { type: 'keyword' }, status_code: { type: 'integer' }, method: { type: 'keyword' } } },
+    seedData: [
+      { _id: '1', _index: 'eq-requests', _source: { endpoint: '/api/users', status_code: 200, method: 'GET' } },
+      { _id: '2', _index: 'eq-requests', _source: { endpoint: '/api/users', status_code: 201, method: 'POST' } },
+      { _id: '3', _index: 'eq-requests', _source: { endpoint: '/api/orders', status_code: 200, method: 'GET' } },
+      { _id: '4', _index: 'eq-requests', _source: { endpoint: '/api/auth', status_code: 401, method: 'POST' } },
+      { _id: '5', _index: 'eq-requests', _source: { endpoint: '/api/users/999', status_code: 404, method: 'GET' } },
+      { _id: '6', _index: 'eq-requests', _source: { endpoint: '/api/orders', status_code: 500, method: 'POST' } },
+      { _id: '7', _index: 'eq-requests', _source: { endpoint: '/api/search', status_code: 200, method: 'GET' } },
+      { _id: '8', _index: 'eq-requests', _source: { endpoint: '/api/search', status_code: 504, method: 'GET' } },
+    ],
+    validate: async (response: SearchResponse): Promise<{ correct: boolean; score: number; maxScore: number; feedback: string }> => {
+      let score = 0;
+      if (response.hits.hits.length === 0) score += 10;
+      const agg = response.aggregations?.status_groups;
+      if (!agg?.buckets) return { correct: false, score, maxScore: 100, feedback: 'Missing "status_groups" filters aggregation with buckets.' };
+      score += 20;
+      const bucketMap = new Map<string, number>();
+      if (Array.isArray(agg.buckets)) {
+        for (const b of agg.buckets) bucketMap.set(String(b.key), b.doc_count);
+      }
+      // success: 4 (200, 201, 200, 200), client_error: 2 (401, 404), server_error: 2 (500, 504)
+      if (bucketMap.get('success') === 4) score += 25;
+      if (bucketMap.get('client_error') === 2) score += 25;
+      if (bucketMap.get('server_error') === 2) score += 20;
+      const correct = score >= 90;
+      return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Filters agg correctly categorizes: success(4), client_error(2), server_error(2).' : `Score: ${score}/100. Expected: success=4, client_error=2, server_error=2.` };
+    },
+    maxScore: 100,
+    timeLimitMs: 45000,
+  },
+  {
+    id: 'aggs-10-percentile-ranks',
+    domain: 'aggregations',
+    difficulty: 'expert',
+    title: 'SLO Compliance with Percentile Ranks',
+    description: `Determine what percentage of API requests complete under the 200ms SLO threshold. Use a percentile_ranks aggregation named "slo_compliance" on "response_time_ms" with values [200]. Size 0.
+
+The result tells you: "X% of requests are at or below 200ms."`,
+    hints: ['percentile_ranks is the inverse of percentiles', 'It tells you what percentile a specific value falls at', 'values: [200] asks "what % of data is <= 200ms?"'],
+    indexName: 'eq-requests',
+    mapping: { properties: { endpoint: { type: 'keyword' }, response_time_ms: { type: 'integer' } } },
+    seedData: [
+      { _id: '1', _index: 'eq-requests', _source: { endpoint: '/api/users', response_time_ms: 45 } },
+      { _id: '2', _index: 'eq-requests', _source: { endpoint: '/api/users', response_time_ms: 52 } },
+      { _id: '3', _index: 'eq-requests', _source: { endpoint: '/api/orders', response_time_ms: 120 } },
+      { _id: '4', _index: 'eq-requests', _source: { endpoint: '/api/users', response_time_ms: 38 } },
+      { _id: '5', _index: 'eq-requests', _source: { endpoint: '/api/search', response_time_ms: 230 } },
+      { _id: '6', _index: 'eq-requests', _source: { endpoint: '/api/orders', response_time_ms: 89 } },
+      { _id: '7', _index: 'eq-requests', _source: { endpoint: '/api/search', response_time_ms: 450 } },
+      { _id: '8', _index: 'eq-requests', _source: { endpoint: '/api/users', response_time_ms: 41 } },
+      { _id: '9', _index: 'eq-requests', _source: { endpoint: '/api/search', response_time_ms: 1200 } },
+      { _id: '10', _index: 'eq-requests', _source: { endpoint: '/api/orders', response_time_ms: 95 } },
+    ],
+    validate: async (response: SearchResponse): Promise<{ correct: boolean; score: number; maxScore: number; feedback: string }> => {
+      let score = 0;
+      if (response.hits.hits.length === 0) score += 20;
+      const agg = response.aggregations?.slo_compliance;
+      if (!agg) return { correct: false, score, maxScore: 100, feedback: 'Missing "slo_compliance" percentile_ranks aggregation.' };
+      const values = (agg as unknown as { values: Record<string, number> }).values;
+      if (!values) return { correct: false, score: score + 10, maxScore: 100, feedback: 'Aggregation exists but missing values. Use values: [200].' };
+      score += 30;
+      // 7 of 10 requests are <= 200ms = 70%
+      if (values['200'] !== undefined) score += 30;
+      if (values['200'] !== undefined && Math.abs(Number(values['200']) - 70) < 5) score += 20;
+      const correct = score >= 90;
+      return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `SLO compliance: ${values['200']}% of requests under 200ms.` : `Score: ${score}/100. Need percentile_ranks with values [200].` };
+    },
+    maxScore: 100,
+    timeLimitMs: 45000,
+  },
 ];

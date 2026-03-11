@@ -258,13 +258,14 @@ describe('Challenge Registry', () => {
     expect(challenges.length).toBeGreaterThanOrEqual(30);
   });
 
-  it('should cover all 5 domains', () => {
+  it('should cover all 6 domains', () => {
     const domains = new Set(getAllChallenges().map((c) => c.domain));
     expect(domains).toContain('full-text-search');
     expect(domains).toContain('ingest-indexing');
     expect(domains).toContain('aggregations');
     expect(domains).toContain('observability');
     expect(domains).toContain('vector-search');
+    expect(domains).toContain('security');
   });
 
   it('should cover all difficulty levels', () => {

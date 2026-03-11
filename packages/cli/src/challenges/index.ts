@@ -4,6 +4,7 @@ import { ingestIndexingChallenges } from './ingest-indexing';
 import { aggregationsChallenges } from './aggregations';
 import { observabilityChallenges } from './observability';
 import { vectorSearchChallenges } from './vector-search';
+import { securityChallenges } from './security';
 
 export function getAllChallenges(): Challenge[] {
   return [
@@ -12,6 +13,7 @@ export function getAllChallenges(): Challenge[] {
     ...aggregationsChallenges,
     ...observabilityChallenges,
     ...vectorSearchChallenges,
+    ...securityChallenges,
   ];
 }
 
@@ -25,4 +27,5 @@ export {
   aggregationsChallenges,
   observabilityChallenges,
   vectorSearchChallenges,
+  securityChallenges,
 };

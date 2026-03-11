@@ -2,8 +2,8 @@ const DOMAINS = [
   {
     icon: '&#128269;',
     name: 'Full-Text Search',
-    count: 9,
-    desc: 'match, multi_match, bool, phrase, wildcard, field boosting, complex filters',
+    count: 14,
+    desc: 'match, bool, phrase, fuzzy, dis_max, boosting, nested queries, function_score, field boosting',
   },
   {
     icon: '&#128230;',
@@ -14,8 +14,8 @@ const DOMAINS = [
   {
     icon: '&#128202;',
     name: 'Aggregations',
-    count: 7,
-    desc: 'terms, avg, sum, stats, cardinality, date_histogram, nested 3-level aggs',
+    count: 10,
+    desc: 'terms, avg, sum, stats, cardinality, date_histogram, percentiles, percentile_ranks, filters agg, 3-level nested aggs',
   },
   {
     icon: '&#128065;',
@@ -29,6 +29,12 @@ const DOMAINS = [
     count: 4,
     desc: 'kNN search, filtered kNN, hybrid text+vector, semantic search with aggregations',
   },
+  {
+    icon: '&#128274;',
+    name: 'Security / SIEM',
+    count: 5,
+    desc: 'IP range filtering, brute force detection, DNS threat hunting, alert triage, account correlation',
+  },
 ];
 
 export default function HomePage() {
@@ -38,7 +44,7 @@ export default function HomePage() {
       <section className="hero">
         <h1>How well does your AI know Elasticsearch?</h1>
         <p>
-          31 challenges across 5 domains. Benchmark any LLM on real Elasticsearch
+          44 challenges across 6 domains. Benchmark any LLM on real Elasticsearch
           query tasks. Compare models on the public leaderboard.
         </p>
         <div className="install-box">
@@ -87,7 +93,7 @@ export default function HomePage() {
 
       {/* Domains */}
       <section className="domains-section">
-        <h2>5 Domains, 31 Challenges</h2>
+        <h2>6 Domains, 44 Challenges</h2>
         <p className="subtitle">
           From beginner match queries to expert-level hybrid vector search with nested aggregations
         </p>

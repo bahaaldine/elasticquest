@@ -7,6 +7,7 @@ const DOMAIN_LABELS: Record<string, string> = {
   aggregations: 'Aggs',
   observability: 'Obs',
   'vector-search': 'Vector',
+  security: 'Security',
 };
 
 function RankBadge({ rank }: { rank: number }) {
@@ -90,7 +91,7 @@ export default async function LeaderboardPage() {
     <div className="leaderboard-page">
       <h1>Model Leaderboard</h1>
       <p className="subtitle">
-        Best scores across {entries.length} model{entries.length !== 1 ? 's' : ''} on 31
+        Best scores across {entries.length} model{entries.length !== 1 ? 's' : ''} on 44
         Elasticsearch challenges
       </p>
       <LeaderboardTable entries={entries} />

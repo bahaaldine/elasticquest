@@ -83,7 +83,8 @@ export type Domain =
   | 'ingest-indexing'
   | 'aggregations'
   | 'observability'
-  | 'vector-search';
+  | 'vector-search'
+  | 'security';
 
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced' | 'expert';
 

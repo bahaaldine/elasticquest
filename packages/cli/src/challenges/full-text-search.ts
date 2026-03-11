@@ -407,4 +407,198 @@ Use a bool query with wildcard and exists clauses.`,
     maxScore: 100,
     timeLimitMs: 60000,
   },
+
+  // --- MORE ADVANCED/EXPERT ---
+  {
+    id: 'fts-10-fuzzy',
+    domain: 'full-text-search',
+    difficulty: 'intermediate',
+    title: 'Fuzzy Search for Typo Tolerance',
+    description: `Users often misspell search terms. Find products matching the misspelled term "headhpones" (intended: "headphones") using a fuzzy query on the "name" field with fuzziness of 2.`,
+    hints: ['Use a fuzzy query on the name field', 'Set fuzziness: 2 to allow 2 character edits'],
+    indexName: 'eq-products',
+    mapping: { properties: { name: { type: 'text' }, category: { type: 'keyword' }, price: { type: 'float' } } },
+    seedData: [
+      { _id: '1', _index: 'eq-products', _source: { name: 'Wireless Headphones', category: 'audio', price: 149 } },
+      { _id: '2', _index: 'eq-products', _source: { name: 'Bluetooth Speaker', category: 'audio', price: 79 } },
+      { _id: '3', _index: 'eq-products', _source: { name: 'Noise Cancelling Headphones', category: 'audio', price: 299 } },
+      { _id: '4', _index: 'eq-products', _source: { name: 'USB Microphone', category: 'audio', price: 129 } },
+      { _id: '5', _index: 'eq-products', _source: { name: 'Headphone Stand', category: 'accessories', price: 25 } },
+    ],
+    validate: async (response: SearchResponse): Promise<{ correct: boolean; score: number; maxScore: number; feedback: string }> => {
+      const hitIds = response.hits.hits.map((h) => h._id);
+      // "headhpones" fuzzy should match "headphones" in docs 1, 3, 5
+      const expectedIds = ['1', '3', '5'];
+      const found = expectedIds.filter((id) => hitIds.includes(id));
+      const correct = found.length >= 2; // At least 2 of the 3 headphone docs
+      const score = Math.floor((found.length / expectedIds.length) * 100);
+      return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `Fuzzy search found ${found.length} headphone products despite typo.` : `Expected headphone products. Fuzzy query should match "headhpones" -> "headphones".` };
+    },
+    maxScore: 100,
+    timeLimitMs: 30000,
+  },
+  {
+    id: 'fts-11-dis-max',
+    domain: 'full-text-search',
+    difficulty: 'advanced',
+    title: 'Best-Field Matching with dis_max',
+    description: `Search for "quick brown fox" across title and body fields. Use a dis_max query so the BEST single field match determines the score (not the sum of all fields). Set tie_breaker to 0.3.
+
+dis_max is better than bool when one field has a strong match and the other is weak - it prevents diluting the score.`,
+    hints: ['Use dis_max with a queries array', 'Each query is a match on one field', 'tie_breaker: 0.3 gives partial credit to other matches'],
+    indexName: 'eq-articles',
+    mapping: { properties: { title: { type: 'text' }, body: { type: 'text' }, author: { type: 'keyword' } } },
+    seedData: [
+      { _id: '1', _index: 'eq-articles', _source: { title: 'The Quick Brown Fox', body: 'A story about animals in the forest.', author: 'alice' } },
+      { _id: '2', _index: 'eq-articles', _source: { title: 'Forest Animals', body: 'The quick brown fox jumps over the lazy dog.', author: 'bob' } },
+      { _id: '3', _index: 'eq-articles', _source: { title: 'Quick Recipes', body: 'Brown sugar and fox nuts are healthy snacks.', author: 'charlie' } },
+      { _id: '4', _index: 'eq-articles', _source: { title: 'Python Programming', body: 'Learn about data structures and algorithms.', author: 'dave' } },
+      { _id: '5', _index: 'eq-articles', _source: { title: 'Fox News Analysis', body: 'A quick brown overview of media trends.', author: 'eve' } },
+    ],
+    validate: async (response: SearchResponse): Promise<{ correct: boolean; score: number; maxScore: number; feedback: string }> => {
+      const hitIds = response.hits.hits.map((h) => h._id);
+      const expectedIds = ['1', '2', '3', '5'];
+      const found = expectedIds.filter((id) => hitIds.includes(id));
+      let score = Math.floor((found.length / expectedIds.length) * 70);
+      // Doc 1 should rank highest (title is exact match)
+      if (hitIds[0] === '1') score += 30;
+      const correct = found.length >= 3 && hitIds[0] === '1';
+      return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'dis_max correctly ranks the best title match first.' : `Found ${found.length}/${expectedIds.length}. Doc 1 should rank first (exact title match).` };
+    },
+    maxScore: 100,
+    timeLimitMs: 45000,
+  },
+  {
+    id: 'fts-12-boosting',
+    domain: 'full-text-search',
+    difficulty: 'advanced',
+    title: 'Demote Without Excluding',
+    description: `Search for "python" articles but DEMOTE (not exclude) articles tagged "beginner". Use a boosting query with:
+- positive: match "python" in title or body
+- negative: term "beginner" in tags
+- negative_boost: 0.2
+
+This keeps beginner articles in results but ranks them lower.`,
+    hints: ['boosting query has positive, negative, and negative_boost', 'Unlike must_not, boosting keeps the docs but reduces their score'],
+    indexName: 'eq-articles',
+    mapping: { properties: { title: { type: 'text' }, body: { type: 'text' }, tags: { type: 'keyword' } } },
+    seedData: [
+      { _id: '1', _index: 'eq-articles', _source: { title: 'Advanced Python Patterns', body: 'Metaclasses and decorators in Python.', tags: ['python', 'advanced'] } },
+      { _id: '2', _index: 'eq-articles', _source: { title: 'Python for Beginners', body: 'Learn Python from scratch.', tags: ['python', 'beginner'] } },
+      { _id: '3', _index: 'eq-articles', _source: { title: 'Python Data Science', body: 'Using Python for data analysis.', tags: ['python', 'data'] } },
+      { _id: '4', _index: 'eq-articles', _source: { title: 'JavaScript Basics', body: 'Intro to JavaScript.', tags: ['javascript', 'beginner'] } },
+      { _id: '5', _index: 'eq-articles', _source: { title: 'Python Web Frameworks', body: 'Django and Flask in Python.', tags: ['python', 'web'] } },
+    ],
+    validate: async (response: SearchResponse): Promise<{ correct: boolean; score: number; maxScore: number; feedback: string }> => {
+      const hitIds = response.hits.hits.map((h) => h._id);
+      const pythonDocs = ['1', '2', '3', '5'];
+      const found = pythonDocs.filter((id) => hitIds.includes(id));
+      let score = 0;
+      // All python docs should be present (boosting doesn't exclude)
+      if (found.length === 4) score += 50;
+      else score += Math.floor((found.length / 4) * 30);
+      // Doc 2 (beginner) should NOT be in top 2 (it's demoted)
+      if (hitIds.length >= 3) {
+        const top2 = hitIds.slice(0, 2);
+        if (!top2.includes('2')) score += 30;
+      }
+      // Doc 2 should still be present (not excluded)
+      if (hitIds.includes('2')) score += 20;
+      const correct = found.length === 4 && hitIds.includes('2') && hitIds.indexOf('2') >= 2;
+      return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Boosting query keeps beginner doc but ranks it lower.' : `All python docs should appear. Doc 2 (beginner) should be demoted, not excluded. Got: [${hitIds.join(',')}]` };
+    },
+    maxScore: 100,
+    timeLimitMs: 45000,
+  },
+  {
+    id: 'fts-13-nested',
+    domain: 'full-text-search',
+    difficulty: 'expert',
+    title: 'Nested Object Query',
+    description: `Products have nested "reviews" objects. Find products where a SINGLE review has rating >= 4 AND mentions "excellent" in the text.
+
+Without a nested query, Elasticsearch would cross-match across different reviews (e.g., one review with rating 5 and another mentioning "excellent"). The nested query ensures both conditions match the SAME review.
+
+Use:
+{
+  "query": {
+    "nested": {
+      "path": "reviews",
+      "query": {
+        "bool": {
+          "must": [
+            { "range": { "reviews.rating": { "gte": 4 } } },
+            { "match": { "reviews.text": "excellent" } }
+          ]
+        }
+      }
+    }
+  }
+}`,
+    hints: ['Use nested query with path "reviews"', 'Inner query is a bool with range + match', 'Field paths inside nested must include the path prefix: reviews.rating, reviews.text'],
+    indexName: 'eq-products',
+    mapping: { properties: { name: { type: 'text' }, reviews: { type: 'nested', properties: { rating: { type: 'integer' }, text: { type: 'text' }, reviewer: { type: 'keyword' } } } } },
+    seedData: [
+      { _id: '1', _index: 'eq-products', _source: { name: 'Laptop Pro', reviews: [{ rating: 5, text: 'Excellent performance and battery life!', reviewer: 'alice' }, { rating: 3, text: 'Screen could be better.', reviewer: 'bob' }] } },
+      { _id: '2', _index: 'eq-products', _source: { name: 'Budget Mouse', reviews: [{ rating: 2, text: 'Excellent design but broke quickly.', reviewer: 'charlie' }, { rating: 5, text: 'Great value for money.', reviewer: 'dave' }] } },
+      { _id: '3', _index: 'eq-products', _source: { name: 'Mechanical Keyboard', reviews: [{ rating: 5, text: 'Excellent build quality, very satisfying.', reviewer: 'eve' }, { rating: 4, text: 'Excellent typing experience.', reviewer: 'frank' }] } },
+      { _id: '4', _index: 'eq-products', _source: { name: 'USB Hub', reviews: [{ rating: 4, text: 'Works fine, nothing special.', reviewer: 'grace' }] } },
+      { _id: '5', _index: 'eq-products', _source: { name: 'Webcam', reviews: [{ rating: 1, text: 'Terrible quality.', reviewer: 'hank' }, { rating: 5, text: 'Excellent after firmware update.', reviewer: 'iris' }] } },
+    ],
+    validate: async (response: SearchResponse): Promise<{ correct: boolean; score: number; maxScore: number; feedback: string }> => {
+      const hitIds = response.hits.hits.map((h) => h._id);
+      // Single review with rating>=4 AND "excellent": 1 (alice: 5+"excellent"), 3 (eve: 5+"excellent", frank: 4+"excellent"), 5 (iris: 5+"excellent")
+      // Doc 2: "excellent" review has rating 2, high-rating review doesn't say "excellent" -> cross-match trap
+      const expectedIds = ['1', '3', '5'];
+      const found = expectedIds.filter((id) => hitIds.includes(id));
+      const falsePositives = hitIds.filter((id) => !expectedIds.includes(id));
+      let score = Math.floor((found.length / expectedIds.length) * 70);
+      // Penalize if doc 2 is included (cross-match error = not using nested)
+      if (!hitIds.includes('2')) score += 30;
+      else score -= 20;
+      const correct = found.length === expectedIds.length && !hitIds.includes('2');
+      return { correct, score: Math.max(0, Math.min(100, score)), maxScore: 100, feedback: correct ? 'Nested query correctly avoids cross-matching across reviews.' : `Expected [1,3,5]. Doc 2 is a trap: "excellent" is in a low-rating review. ${hitIds.includes('2') ? 'Doc 2 included = not using nested query.' : ''}` };
+    },
+    maxScore: 100,
+    timeLimitMs: 60000,
+  },
+  {
+    id: 'fts-14-function-score',
+    domain: 'full-text-search',
+    difficulty: 'expert',
+    title: 'Custom Relevance with function_score',
+    description: `Search for "laptop" but boost results by their "rating" field. Use function_score with:
+- query: match "laptop" in title or body
+- functions: field_value_factor on "rating" with modifier "log1p" and factor 2
+- boost_mode: "multiply"
+
+This makes higher-rated laptops rank higher in results.`,
+    hints: ['function_score wraps a query and applies scoring functions', 'field_value_factor multiplies the score by a field value', 'log1p prevents zero-rated items from getting score 0'],
+    indexName: 'eq-products',
+    mapping: { properties: { title: { type: 'text' }, body: { type: 'text' }, rating: { type: 'float' }, price: { type: 'float' }, category: { type: 'keyword' } } },
+    seedData: [
+      { _id: '1', _index: 'eq-products', _source: { title: 'Budget Laptop', body: 'An affordable laptop for everyday tasks.', rating: 3.2, price: 399, category: 'electronics' } },
+      { _id: '2', _index: 'eq-products', _source: { title: 'Pro Laptop Ultra', body: 'High-performance laptop for professionals.', rating: 4.8, price: 1999, category: 'electronics' } },
+      { _id: '3', _index: 'eq-products', _source: { title: 'Student Laptop', body: 'A laptop perfect for students.', rating: 4.1, price: 599, category: 'electronics' } },
+      { _id: '4', _index: 'eq-products', _source: { title: 'Gaming Desktop', body: 'Powerful desktop for gaming.', rating: 4.9, price: 2499, category: 'electronics' } },
+      { _id: '5', _index: 'eq-products', _source: { title: 'Laptop Stand', body: 'Aluminum stand for your laptop.', rating: 4.5, price: 49, category: 'accessories' } },
+      { _id: '6', _index: 'eq-products', _source: { title: 'Refurbished Laptop', body: 'Pre-owned laptop, fully tested.', rating: 2.1, price: 249, category: 'electronics' } },
+    ],
+    validate: async (response: SearchResponse): Promise<{ correct: boolean; score: number; maxScore: number; feedback: string }> => {
+      const hitIds = response.hits.hits.map((h) => h._id);
+      const laptopDocs = ['1', '2', '3', '5', '6'];
+      const found = laptopDocs.filter((id) => hitIds.includes(id));
+      let score = 0;
+      if (found.length >= 4) score += 40;
+      // Doc 2 (rating 4.8) should rank above doc 1 (rating 3.2) and doc 6 (rating 2.1)
+      if (hitIds.length >= 2 && hitIds.indexOf('2') < hitIds.indexOf('1')) score += 20;
+      if (hitIds.length >= 2 && hitIds.indexOf('2') < hitIds.indexOf('6')) score += 20;
+      // Doc 4 (gaming desktop) should NOT appear (doesn't mention laptop)
+      if (!hitIds.includes('4')) score += 20;
+      const correct = found.length >= 4 && hitIds[0] === '2' && !hitIds.includes('4');
+      return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'function_score correctly boosts higher-rated laptops.' : `Laptop docs should appear with high-rated ones first. Doc 2 (rating 4.8) should rank #1. Got: [${hitIds.join(',')}]` };
+    },
+    maxScore: 100,
+    timeLimitMs: 60000,
+  },
 ];
