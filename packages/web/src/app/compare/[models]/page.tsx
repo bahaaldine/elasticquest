@@ -1,7 +1,6 @@
 import { getBestModelScore } from '@/lib/store';
 import { notFound } from 'next/navigation';
 import { RadarChart } from '@/components/radar-chart';
-import { BadgeDisplay, computeBadges } from '@/components/badges';
 
 export const dynamic = 'force-dynamic';
 

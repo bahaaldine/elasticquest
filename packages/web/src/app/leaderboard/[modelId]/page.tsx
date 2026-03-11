@@ -3,7 +3,8 @@ import type { ChallengeDetail } from '@/lib/store';
 import { notFound } from 'next/navigation';
 import { RadarChart } from '@/components/radar-chart';
 import { DifficultyCurve } from '@/components/difficulty-curve';
-import { BadgeDisplay, computeBadges } from '@/components/badges';
+import { computeBadges } from '@/components/badges-logic';
+import { BadgeDisplay } from '@/components/badges';
 
 export const dynamic = 'force-dynamic';
 

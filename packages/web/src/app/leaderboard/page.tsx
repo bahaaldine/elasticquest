@@ -96,7 +96,7 @@ export default async function LeaderboardPage() {
     <div className="leaderboard-page">
       <h1>Model Leaderboard</h1>
       <p className="subtitle">
-        Best scores across {entries.length} model{entries.length !== 1 ? 's' : ''} on 44
+        Best scores across {entries.length} model{entries.length !== 1 ? 's' : ''} on 49
         Elasticsearch challenges
       </p>
       <LeaderboardTable entries={entries} />

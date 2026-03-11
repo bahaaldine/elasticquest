@@ -55,6 +55,11 @@ const CHALLENGES = [
   { id: 'obs-3-error-rate', domain: 'observability', difficulty: 'advanced', title: 'Error Rate by Service', desc: 'Nested terms aggs: service -> level distribution' },
   { id: 'obs-4-status-code-range', domain: 'observability', difficulty: 'intermediate', title: 'HTTP 5xx Analysis', desc: 'Range query on status_code field for server errors' },
   { id: 'obs-5-log-text-search', domain: 'observability', difficulty: 'advanced', title: 'Log Pattern Search', desc: 'Combined text match + level filter for error investigation' },
+  { id: 'obs-6-latency-percentiles', domain: 'observability', difficulty: 'advanced', title: 'Service Latency Percentiles', desc: 'APM-style: terms on service -> percentiles p50/p95/p99 on duration' },
+  { id: 'obs-7-error-spike', domain: 'observability', difficulty: 'intermediate', title: 'Error Spike Detection', desc: 'date_histogram (1h) on ERROR logs to find incident time window' },
+  { id: 'obs-8-multi-service', domain: 'observability', difficulty: 'advanced', title: 'Cross-Service Trace Errors', desc: 'Terms on trace_id -> cardinality on service.name for cascading failures' },
+  { id: 'obs-9-top-errors', domain: 'observability', difficulty: 'intermediate', title: 'Top Error Messages', desc: 'Terms agg on message.keyword for most common error patterns' },
+  { id: 'obs-10-uptime', domain: 'observability', difficulty: 'expert', title: 'SLO Uptime Calculation', desc: 'Filters agg with success (2xx) vs failure (5xx) per service' },
   // Vector Search (4)
   { id: 'vec-1-knn-basic', domain: 'vector-search', difficulty: 'beginner', title: 'Basic kNN Search', desc: 'kNN nearest neighbor search on dense vector field' },
   { id: 'vec-2-knn-with-filter', domain: 'vector-search', difficulty: 'intermediate', title: 'kNN with Filter', desc: 'kNN with category filter to restrict candidates' },
@@ -76,7 +81,7 @@ export default function ChallengesPage() {
     <div className="leaderboard-page">
       <h1>Challenge Catalog</h1>
       <p className="subtitle">
-        44 Elasticsearch challenges across 6 domains and 4 difficulty levels
+        49 Elasticsearch challenges across 6 domains and 4 difficulty levels
       </p>
 
       {/* Stats */}

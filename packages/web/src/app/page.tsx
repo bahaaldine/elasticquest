@@ -20,8 +20,8 @@ const DOMAINS = [
   {
     icon: '&#128065;',
     name: 'Observability',
-    count: 5,
-    desc: 'Log filtering, service error analysis, HTTP status codes, message pattern search',
+    count: 10,
+    desc: 'Log filtering, error spikes, latency percentiles, trace correlation, SLO uptime, top errors',
   },
   {
     icon: '&#129302;',
@@ -44,7 +44,7 @@ export default function HomePage() {
       <section className="hero">
         <h1>How well does your AI know Elasticsearch?</h1>
         <p>
-          44 challenges across 6 domains. Benchmark any LLM on real Elasticsearch
+          49 challenges across 6 domains. Benchmark any LLM on real Elasticsearch
           query tasks. Compare models on the public leaderboard.
         </p>
         <div className="install-box">
@@ -93,7 +93,7 @@ export default function HomePage() {
 
       {/* Domains */}
       <section className="domains-section">
-        <h2>6 Domains, 44 Challenges</h2>
+        <h2>6 Domains, 49 Challenges</h2>
         <p className="subtitle">
           From beginner match queries to expert-level hybrid vector search with nested aggregations
         </p>

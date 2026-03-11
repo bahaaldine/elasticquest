@@ -253,9 +253,9 @@ describe('GameEngine', () => {
 });
 
 describe('Challenge Registry', () => {
-  it('should have at least 30 challenges', () => {
+  it('should have at least 49 challenges', () => {
     const challenges = getAllChallenges();
-    expect(challenges.length).toBeGreaterThanOrEqual(30);
+    expect(challenges.length).toBeGreaterThanOrEqual(49);
   });
 
   it('should cover all 6 domains', () => {
