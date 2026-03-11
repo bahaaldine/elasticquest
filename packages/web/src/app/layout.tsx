@@ -23,6 +23,7 @@ export default function RootLayout({
             <div className="nav-links">
               <a href="/leaderboard">Leaderboard</a>
               <a href="/challenges">Challenges</a>
+              <a href="/scoring">Scoring</a>
               <a
                 href="https://github.com/elastic-quest/elastic-quest"
                 target="_blank"

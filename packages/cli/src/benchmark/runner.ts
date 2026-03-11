@@ -157,15 +157,27 @@ export class BenchmarkRunner {
       );
       const validation = await challenge.validate(searchResponse, this.backend);
 
+      // Apply speed multiplier to the score
+      const speedMultiplier = this.getSpeedMultiplier(latencyMs);
+      const adjustedScore = Math.min(
+        validation.maxScore,
+        Math.round(validation.score * speedMultiplier),
+      );
+      const speedNote = speedMultiplier > 1
+        ? ` Speed bonus: x${speedMultiplier} (${latencyMs}ms).`
+        : speedMultiplier < 1
+          ? ` Speed penalty: x${speedMultiplier} (${latencyMs}ms).`
+          : '';
+
       return {
         challengeId: challenge.id,
         domain: challenge.domain,
         difficulty: challenge.difficulty,
         title: challenge.title,
-        score: validation.score,
+        score: adjustedScore,
         maxScore: validation.maxScore,
         correct: validation.correct,
-        feedback: validation.feedback,
+        feedback: validation.feedback + speedNote,
         latencyMs,
         inputTokens,
         outputTokens,
@@ -192,6 +204,24 @@ export class BenchmarkRunner {
         error,
       };
     }
+  }
+
+  /**
+   * Speed multiplier for scoring.
+   * Rewards fast responses, penalizes very slow ones.
+   *
+   *   < 2s  -> 1.15x (15% bonus)
+   *   2-5s  -> 1.00x (neutral)
+   *   5-10s -> 0.95x (5% penalty)
+   *   10-30s -> 0.90x (10% penalty)
+   *   > 30s -> 0.80x (20% penalty)
+   */
+  private getSpeedMultiplier(latencyMs: number): number {
+    if (latencyMs < 2000) return 1.15;
+    if (latencyMs < 5000) return 1.0;
+    if (latencyMs < 10000) return 0.95;
+    if (latencyMs < 30000) return 0.90;
+    return 0.80;
   }
 
   private buildPrompt(challenge: Challenge): string {
