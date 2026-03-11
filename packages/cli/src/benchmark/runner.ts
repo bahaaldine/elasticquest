@@ -14,6 +14,7 @@ import type {
   ElasticBackend,
 } from '../types';
 import { SimulatedBackend } from '../elastic/simulated-backend';
+import { RealBackend } from '../elastic/real-backend';
 import { getAllChallenges } from '../challenges';
 
 const SYSTEM_PROMPT = `You are being evaluated on your ability to write Elasticsearch queries.
@@ -32,12 +33,21 @@ Example response:
 export class BenchmarkRunner {
   private model: ModelAdapter;
   private config: BenchmarkConfig;
-  private backend: SimulatedBackend;
+  private backend: ElasticBackend;
 
   constructor(model: ModelAdapter, config: BenchmarkConfig) {
     this.model = model;
     this.config = config;
-    this.backend = new SimulatedBackend();
+
+    if (config.backendMode === 'real' && config.esNode) {
+      this.backend = new RealBackend({
+        node: config.esNode,
+        username: config.esUsername,
+        password: config.esPassword,
+      });
+    } else {
+      this.backend = new SimulatedBackend();
+    }
   }
 
   async run(): Promise<BenchmarkResult> {

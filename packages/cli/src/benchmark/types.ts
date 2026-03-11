@@ -29,6 +29,10 @@ export interface BenchmarkConfig {
   domains?: Domain[];        // filter to specific domains
   difficulties?: Difficulty[]; // filter to specific difficulties
   verbose?: boolean;
+  backendMode?: 'simulated' | 'real'; // default: simulated
+  esNode?: string;           // ES URL for real mode
+  esUsername?: string;       // ES username
+  esPassword?: string;       // ES password
 }
 
 export interface ChallengeScore {

@@ -325,6 +325,10 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
           domains: parsed.domains,
           difficulties: parsed.difficulties,
           verbose: parsed.verbose,
+          backendMode: parsed.realEs ? 'real' : 'simulated',
+          esNode: parsed.esConfig?.node,
+          esUsername: parsed.esConfig?.username,
+          esPassword: parsed.esConfig?.password,
         };
 
         const runner = new BenchmarkRunner(model, config);
