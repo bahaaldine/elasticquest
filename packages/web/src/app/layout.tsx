@@ -4,7 +4,7 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'ElasticQuest - Elasticsearch Benchmark for AI Models',
   description:
-    'How well does your AI model know Elasticsearch? 31 challenges across 5 domains. Benchmark any LLM and compare on the public leaderboard.',
+    'How well does your AI model know Elasticsearch? 53 challenges across 6 domains. Benchmark any LLM and compare on the public leaderboard.',
 };
 
 export default function RootLayout({
@@ -23,9 +23,10 @@ export default function RootLayout({
             <div className="nav-links">
               <a href="/leaderboard">Leaderboard</a>
               <a href="/challenges">Challenges</a>
+              <a href="/insights">Insights</a>
               <a href="/scoring">Scoring</a>
               <a
-                href="https://github.com/elastic-quest/elastic-quest"
+                href="https://github.com/bahaaldine/elasticquest"
                 target="_blank"
                 rel="noopener noreferrer"
               >

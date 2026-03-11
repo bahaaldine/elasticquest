@@ -1,8 +1,8 @@
 # AGENTS.md - ElasticQuest Coding Guidelines
 
 ElasticQuest is an Elasticsearch benchmark for AI models. Monorepo with a CLI
-(packages/cli) and a Next.js web app (packages/web). Models solve 31 ES query
-challenges across 5 domains and 4 difficulty levels. Results are scored and
+(packages/cli) and a Next.js web app (packages/web). Models solve 53 ES query
+challenges across 6 domains and 4 difficulty levels. Results are scored and
 ranked on a public leaderboard.
 
 ---
@@ -77,18 +77,24 @@ packages/
         simulated-backend.ts      # In-memory ES engine (match, bool, kNN, aggs, pipelines)
         real-backend.ts           # Wraps @elastic/elasticsearch client
       engine/game-engine.ts       # Game loop: setup, validate, score
-      challenges/                 # 31 challenges across 5 domains
-        full-text-search.ts       # 9 challenges
+      challenges/                 # 53 challenges across 6 domains
+        full-text-search.ts       # 14 challenges (+ 1 multi-turn)
         ingest-indexing.ts        # 6 challenges
-        aggregations.ts           # 7 challenges
-        observability.ts          # 5 challenges
+        aggregations.ts           # 10 challenges (+ 1 multi-turn)
+        observability.ts          # 10 challenges (+ 1 multi-turn)
         vector-search.ts          # 4 challenges
+        security.ts               # 5 challenges (+ 1 multi-turn)
+        multi-turn.ts             # 4 multi-turn challenges
+        helpers.ts                # Validation helpers (scoreHits, scoreOrder, etc.)
+        _template.ts              # Challenge contribution template
       benchmark/
         types.ts                  # ModelAdapter, BenchmarkResult types
         model-adapters.ts         # OpenAI, Anthropic, Ollama adapters
         openrouter.ts             # OpenRouter adapter + interactive model picker
-        runner.ts                 # BenchmarkRunner orchestrator
+        runner.ts                 # BenchmarkRunner orchestrator (single + multi-turn)
         store.ts                  # Local results storage + formatting
+      cloud/
+        elastic-cloud.ts          # Elastic Cloud auto-provisioning
       protocol/game-server.ts     # JSON stdin/stdout for agent play mode
       index.ts                    # CLI entry point
       __tests__/game.test.ts      # 21 tests
@@ -98,10 +104,24 @@ packages/
         page.tsx                  # Landing page
         layout.tsx                # Root layout + nav
         globals.css               # Dark theme styles
-        leaderboard/page.tsx      # Leaderboard page
+        leaderboard/page.tsx      # Leaderboard page (score + efficiency tabs)
+        leaderboard/efficiency/   # Cost-efficiency leaderboard
+        models/[...slug]/page.tsx # Model card (radar chart, badges, history)
+        challenges/page.tsx       # Challenge catalog (searchable, filterable)
+        insights/page.tsx         # Failure analysis (hardest/easiest challenges)
+        scoring/page.tsx          # Scoring methodology
+        compare/[models]/page.tsx # Head-to-head model comparison
         api/scores/route.ts       # POST /api/scores
-        api/leaderboard/route.ts  # GET /api/leaderboard
-      lib/store.ts                # Score storage (file-based, swap for Firestore)
+        api/leaderboard/route.ts  # GET /api/leaderboard (?format=csv)
+        api/badge/[modelId]/      # GET /api/badge/:modelId (SVG badge)
+        api/scores/[modelId]/     # GET /api/scores/:modelId
+      components/
+        radar-chart.tsx           # SVG radar/spider chart
+        difficulty-curve.tsx      # SVG difficulty curve chart
+        badges.tsx                # Badge display component
+        badges-logic.ts           # Badge computation logic (server-safe)
+        challenge-of-week.tsx     # Weekly featured challenge
+      lib/store.ts                # Firestore-backed score storage
 ```
 
 ---
@@ -157,8 +177,15 @@ import type { Challenge, SearchResponse, ElasticBackend } from '../types';
 
 `BenchmarkRunner` iterates each challenge: sets up the index on `SimulatedBackend`,
 builds a prompt, calls `ModelAdapter.complete()`, extracts JSON from the response,
-executes the query, validates the result. After scoring, results are submitted to the
-web API via `POST /api/scores`.
+executes the query, validates the result. Speed multiplier applied to score.
+After scoring, results (including cost) are submitted to the web API via `POST /api/scores`.
+
+### CLI: Multi-Turn Challenges
+
+Challenges with `multiTurn: true` use a two-step flow:
+1. Discovery prompt sent first (model examines mapping + sample docs)
+2. Model's analysis is fed back as context for the query prompt
+3. Both API calls' tokens and latency are aggregated
 
 ### CLI: Model Adapters
 
@@ -170,9 +197,9 @@ web API via `POST /api/scores`.
 
 ### Web: Data Flow
 
-CLI submits scores -> `POST /api/scores` -> file-based store (`.data/scores.json`)
--> `GET /api/leaderboard` -> leaderboard page. The store is designed to be swapped
-for Firestore with minimal changes (same interface in `lib/store.ts`).
+CLI submits scores -> `POST /api/scores` -> Firestore (`elastic-quest` database)
+-> `GET /api/leaderboard` -> leaderboard page. Model cards, insights, and
+comparison pages all read from the same Firestore collection.
 
 ---
 
@@ -182,7 +209,8 @@ for Firestore with minimal changes (same interface in `lib/store.ts`).
 2. Export a `Challenge[]` array following the existing pattern
 3. Register in `packages/cli/src/challenges/index.ts` `getAllChallenges()`
 4. Each challenge needs: id, domain, difficulty, seed data, mapping, validate function
-5. Test: `npm test -w packages/cli`
+5. For multi-turn: set `multiTurn: true` and provide `discoveryPrompt`
+6. Test: `npm test -w packages/cli`
 
 ---
 

@@ -1,3 +1,7 @@
+'use client';
+
+import { useState } from 'react';
+
 const DOMAIN_LABELS: Record<string, string> = {
   'full-text-search': 'Full-Text Search',
   'ingest-indexing': 'Ingest & Indexing',
@@ -14,9 +18,8 @@ const DIFF_COLORS: Record<string, string> = {
   expert: '#ef4444',
 };
 
-// Static challenge list (from CLI)
 const CHALLENGES = [
-  // Full-Text Search (14)
+  // Full-Text Search
   { id: 'fts-1-basic-match', domain: 'full-text-search', difficulty: 'beginner', title: 'Find the Articles', desc: 'Multi-field match query to find articles mentioning "elasticsearch"' },
   { id: 'fts-2-simple-term', domain: 'full-text-search', difficulty: 'beginner', title: 'Exact Category Match', desc: 'Term query on keyword field for exact author matching' },
   { id: 'fts-3-match-with-operator', domain: 'full-text-search', difficulty: 'beginner', title: 'Match All Terms', desc: 'Match query with AND operator requiring all terms present' },
@@ -31,14 +34,14 @@ const CHALLENGES = [
   { id: 'fts-12-boosting', domain: 'full-text-search', difficulty: 'advanced', title: 'Demote Without Excluding', desc: 'Boosting query to reduce score of beginner articles' },
   { id: 'fts-13-nested', domain: 'full-text-search', difficulty: 'expert', title: 'Nested Object Query', desc: 'Nested query to match conditions within same array element' },
   { id: 'fts-14-function-score', domain: 'full-text-search', difficulty: 'expert', title: 'Custom Relevance', desc: 'function_score with field_value_factor to boost by rating' },
-  // Ingest & Indexing (6)
+  // Ingest & Indexing
   { id: 'ingest-1-mapping-query', domain: 'ingest-indexing', difficulty: 'beginner', title: 'Field Type Queries', desc: 'Bool filter with term, range, and boolean field matching' },
   { id: 'ingest-2-sort-pagination', domain: 'ingest-indexing', difficulty: 'intermediate', title: 'Sort and Pagination', desc: 'Sort by price desc, limit to top 3, _source filtering' },
   { id: 'ingest-3-date-filter', domain: 'ingest-indexing', difficulty: 'intermediate', title: 'Date Range Filtering', desc: 'Range query on dates with ascending sort' },
   { id: 'ingest-4-terms-query', domain: 'ingest-indexing', difficulty: 'intermediate', title: 'Multi-Value Matching', desc: 'Terms query to match multiple status values at once' },
   { id: 'ingest-5-pagination', domain: 'ingest-indexing', difficulty: 'advanced', title: 'Deep Pagination', desc: 'Page 2 of results using from/size with sort' },
   { id: 'ingest-6-count-and-filter', domain: 'ingest-indexing', difficulty: 'advanced', title: 'Conditional Counting', desc: 'Count documents matching criteria with size:0' },
-  // Aggregations (10)
+  // Aggregations
   { id: 'aggs-1-basic-terms', domain: 'aggregations', difficulty: 'beginner', title: 'Category Breakdown', desc: 'Terms aggregation to count documents per category' },
   { id: 'aggs-2-simple-avg', domain: 'aggregations', difficulty: 'beginner', title: 'Average Value', desc: 'Avg metric aggregation on a numeric field' },
   { id: 'aggs-3-filtered-agg', domain: 'aggregations', difficulty: 'intermediate', title: 'Filtered Aggregation', desc: 'Sum aggregation with query filter on category' },
@@ -49,39 +52,57 @@ const CHALLENGES = [
   { id: 'aggs-8-percentiles', domain: 'aggregations', difficulty: 'advanced', title: 'Latency Percentiles', desc: 'p50/p95/p99 percentiles on response times' },
   { id: 'aggs-9-filters', domain: 'aggregations', difficulty: 'advanced', title: 'Named Filters', desc: 'Filters aggregation for HTTP status code categorization' },
   { id: 'aggs-10-percentile-ranks', domain: 'aggregations', difficulty: 'expert', title: 'SLO Compliance', desc: 'Percentile ranks to check what % of requests meet SLO' },
-  // Observability (5)
+  // Observability
   { id: 'obs-1-log-filtering', domain: 'observability', difficulty: 'beginner', title: 'Filter Error Logs', desc: 'Term query to find all ERROR-level logs' },
   { id: 'obs-2-service-errors', domain: 'observability', difficulty: 'intermediate', title: 'Service Error Investigation', desc: 'Bool + range + sort for time-windowed service errors' },
   { id: 'obs-3-error-rate', domain: 'observability', difficulty: 'advanced', title: 'Error Rate by Service', desc: 'Nested terms aggs: service -> level distribution' },
   { id: 'obs-4-status-code-range', domain: 'observability', difficulty: 'intermediate', title: 'HTTP 5xx Analysis', desc: 'Range query on status_code field for server errors' },
   { id: 'obs-5-log-text-search', domain: 'observability', difficulty: 'advanced', title: 'Log Pattern Search', desc: 'Combined text match + level filter for error investigation' },
-  { id: 'obs-6-latency-percentiles', domain: 'observability', difficulty: 'advanced', title: 'Service Latency Percentiles', desc: 'APM-style: terms on service -> percentiles p50/p95/p99 on duration' },
-  { id: 'obs-7-error-spike', domain: 'observability', difficulty: 'intermediate', title: 'Error Spike Detection', desc: 'date_histogram (1h) on ERROR logs to find incident time window' },
-  { id: 'obs-8-multi-service', domain: 'observability', difficulty: 'advanced', title: 'Cross-Service Trace Errors', desc: 'Terms on trace_id -> cardinality on service.name for cascading failures' },
-  { id: 'obs-9-top-errors', domain: 'observability', difficulty: 'intermediate', title: 'Top Error Messages', desc: 'Terms agg on message.keyword for most common error patterns' },
+  { id: 'obs-6-latency-percentiles', domain: 'observability', difficulty: 'advanced', title: 'Service Latency Percentiles', desc: 'APM-style: terms on service -> percentiles p50/p95/p99' },
+  { id: 'obs-7-error-spike', domain: 'observability', difficulty: 'intermediate', title: 'Error Spike Detection', desc: 'date_histogram (1h) on ERROR logs to find incident window' },
+  { id: 'obs-8-multi-service', domain: 'observability', difficulty: 'advanced', title: 'Cross-Service Trace Errors', desc: 'Terms on trace_id -> cardinality on service.name' },
+  { id: 'obs-9-top-errors', domain: 'observability', difficulty: 'intermediate', title: 'Top Error Messages', desc: 'Terms agg on message.keyword for most common errors' },
   { id: 'obs-10-uptime', domain: 'observability', difficulty: 'expert', title: 'SLO Uptime Calculation', desc: 'Filters agg with success (2xx) vs failure (5xx) per service' },
-  // Vector Search (4)
+  // Vector Search
   { id: 'vec-1-knn-basic', domain: 'vector-search', difficulty: 'beginner', title: 'Basic kNN Search', desc: 'kNN nearest neighbor search on dense vector field' },
   { id: 'vec-2-knn-with-filter', domain: 'vector-search', difficulty: 'intermediate', title: 'kNN with Filter', desc: 'kNN with category filter to restrict candidates' },
   { id: 'vec-3-hybrid', domain: 'vector-search', difficulty: 'advanced', title: 'Hybrid Text + Vector', desc: 'Combine kNN similarity with keyword text matching' },
   { id: 'vec-4-semantic-category', domain: 'vector-search', difficulty: 'expert', title: 'Semantic + Aggregation', desc: 'kNN results aggregated by category for classification' },
-  // Security (5)
+  // Security
   { id: 'sec-1-ip-range', domain: 'security', difficulty: 'beginner', title: 'Denied Traffic from Subnet', desc: 'Wildcard/prefix on source IP + action filter' },
   { id: 'sec-2-failed-logins', domain: 'security', difficulty: 'intermediate', title: 'Brute Force Detection', desc: 'Bool filter + terms agg to find IPs with most failed logins' },
   { id: 'sec-3-rare-domains', domain: 'security', difficulty: 'intermediate', title: 'DNS Threat Hunting', desc: 'Rare terms aggregation to find unusual domain queries' },
   { id: 'sec-4-alert-triage', domain: 'security', difficulty: 'advanced', title: 'Alert Severity Triage', desc: 'Filters aggregation to categorize alerts by severity range' },
   { id: 'sec-5-correlation', domain: 'security', difficulty: 'advanced', title: 'Compromised Accounts', desc: 'Terms + sub-agg to find users with both failed and successful logins' },
-  // Multi-turn (4)
-  { id: 'mt-1-discover-and-search', domain: 'full-text-search', difficulty: 'intermediate', title: 'Discover Schema, Then Search (Multi-Turn)', desc: 'Explore unknown index schema, then find matching documents' },
-  { id: 'mt-2-explore-and-aggregate', domain: 'aggregations', difficulty: 'advanced', title: 'Explore Data, Then Aggregate (Multi-Turn)', desc: 'Discover non-obvious field names, then compute revenue per region' },
-  { id: 'mt-3-unknown-logs', domain: 'observability', difficulty: 'advanced', title: 'Unknown Log Schema (Multi-Turn)', desc: 'Investigate logs with non-standard field names (ts, severity, svc)' },
-  { id: 'mt-4-investigate', domain: 'security', difficulty: 'expert', title: 'Security Investigation (Multi-Turn)', desc: 'Discover auth schema, find IPs with 3+ failed login attempts' },
+  // Multi-turn
+  { id: 'mt-1-discover-and-search', domain: 'full-text-search', difficulty: 'intermediate', title: 'Discover Schema, Then Search', desc: 'Explore unknown index schema, then find matching documents', multiTurn: true },
+  { id: 'mt-2-explore-and-aggregate', domain: 'aggregations', difficulty: 'advanced', title: 'Explore Data, Then Aggregate', desc: 'Discover non-obvious field names, then compute revenue per region', multiTurn: true },
+  { id: 'mt-3-unknown-logs', domain: 'observability', difficulty: 'advanced', title: 'Unknown Log Schema', desc: 'Investigate logs with non-standard field names (ts, severity, svc)', multiTurn: true },
+  { id: 'mt-4-investigate', domain: 'security', difficulty: 'expert', title: 'Security Investigation', desc: 'Discover auth schema, find IPs with 3+ failed login attempts', multiTurn: true },
 ];
 
-// Group by domain
-const domains = [...new Set(CHALLENGES.map((c) => c.domain))];
+const ALL_DOMAINS = [...new Set(CHALLENGES.map((c) => c.domain))];
+const ALL_DIFFICULTIES = ['beginner', 'intermediate', 'advanced', 'expert'];
 
 export default function ChallengesPage() {
+  const [search, setSearch] = useState('');
+  const [domainFilter, setDomainFilter] = useState<string | null>(null);
+  const [diffFilter, setDiffFilter] = useState<string | null>(null);
+  const [multiTurnOnly, setMultiTurnOnly] = useState(false);
+
+  const filtered = CHALLENGES.filter((c) => {
+    if (domainFilter && c.domain !== domainFilter) return false;
+    if (diffFilter && c.difficulty !== diffFilter) return false;
+    if (multiTurnOnly && !('multiTurn' in c && c.multiTurn)) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return c.title.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q) || c.id.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const domains = [...new Set(filtered.map((c) => c.domain))];
+
   return (
     <div className="leaderboard-page">
       <h1>Challenge Catalog</h1>
@@ -89,32 +110,107 @@ export default function ChallengesPage() {
         53 Elasticsearch challenges across 6 domains and 4 difficulty levels
       </p>
 
-      {/* Stats */}
-      <div style={{
-        display: 'flex',
-        gap: '1rem',
-        flexWrap: 'wrap',
-        marginBottom: '2rem',
-      }}>
-        {(['beginner', 'intermediate', 'advanced', 'expert'] as const).map((d) => {
-          const count = CHALLENGES.filter((c) => c.difficulty === d).length;
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center' }}>
+        {/* Search */}
+        <input
+          type="text"
+          placeholder="Search challenges..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            background: '#141414', border: '1px solid #262626', borderRadius: 6,
+            padding: '0.5rem 0.75rem', color: '#e5e5e5', fontSize: '0.85rem',
+            outline: 'none', width: 220,
+          }}
+        />
+
+        {/* Domain filter */}
+        <select
+          value={domainFilter ?? ''}
+          onChange={(e) => setDomainFilter(e.target.value || null)}
+          style={{
+            background: '#141414', border: '1px solid #262626', borderRadius: 6,
+            padding: '0.5rem 0.75rem', color: '#e5e5e5', fontSize: '0.85rem', outline: 'none',
+          }}
+        >
+          <option value="">All domains</option>
+          {ALL_DOMAINS.map((d) => (
+            <option key={d} value={d}>{DOMAIN_LABELS[d] ?? d}</option>
+          ))}
+        </select>
+
+        {/* Difficulty filter */}
+        <select
+          value={diffFilter ?? ''}
+          onChange={(e) => setDiffFilter(e.target.value || null)}
+          style={{
+            background: '#141414', border: '1px solid #262626', borderRadius: 6,
+            padding: '0.5rem 0.75rem', color: '#e5e5e5', fontSize: '0.85rem', outline: 'none',
+          }}
+        >
+          <option value="">All difficulties</option>
+          {ALL_DIFFICULTIES.map((d) => (
+            <option key={d} value={d}>{d}</option>
+          ))}
+        </select>
+
+        {/* Multi-turn toggle */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: '#a3a3a3', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={multiTurnOnly}
+            onChange={(e) => setMultiTurnOnly(e.target.checked)}
+            style={{ accentColor: '#a855f7' }}
+          />
+          Multi-turn only
+        </label>
+
+        {/* Result count */}
+        <span style={{ color: '#737373', fontSize: '0.85rem', marginLeft: 'auto' }}>
+          {filtered.length} challenge{filtered.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {/* Difficulty stats */}
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
+        {ALL_DIFFICULTIES.map((d) => {
+          const count = filtered.filter((c) => c.difficulty === d).length;
           return (
-            <span key={d} style={{
-              background: '#141414',
-              border: '1px solid #262626',
-              borderRadius: 6,
-              padding: '0.4rem 0.8rem',
-              fontSize: '0.85rem',
-            }}>
+            <span
+              key={d}
+              onClick={() => setDiffFilter(diffFilter === d ? null : d)}
+              style={{
+                background: diffFilter === d ? `${DIFF_COLORS[d]}20` : '#141414',
+                border: `1px solid ${diffFilter === d ? DIFF_COLORS[d] : '#262626'}`,
+                borderRadius: 6, padding: '0.4rem 0.8rem', fontSize: '0.85rem', cursor: 'pointer',
+              }}
+            >
               <span style={{ color: DIFF_COLORS[d], fontWeight: 600 }}>{d}</span>
               <span style={{ color: '#737373', marginLeft: '0.4rem' }}>{count}</span>
             </span>
           );
         })}
+        {CHALLENGES.filter((c) => 'multiTurn' in c && c.multiTurn).length > 0 && (
+          <span
+            onClick={() => setMultiTurnOnly(!multiTurnOnly)}
+            style={{
+              background: multiTurnOnly ? '#a855f720' : '#141414',
+              border: `1px solid ${multiTurnOnly ? '#a855f7' : '#262626'}`,
+              borderRadius: 6, padding: '0.4rem 0.8rem', fontSize: '0.85rem', cursor: 'pointer',
+            }}
+          >
+            <span style={{ color: '#a855f7', fontWeight: 600 }}>multi-turn</span>
+            <span style={{ color: '#737373', marginLeft: '0.4rem' }}>
+              {CHALLENGES.filter((c) => 'multiTurn' in c && c.multiTurn).length}
+            </span>
+          </span>
+        )}
       </div>
 
       {domains.map((domain) => {
-        const domainChallenges = CHALLENGES.filter((c) => c.domain === domain);
+        const domainChallenges = filtered.filter((c) => c.domain === domain);
+        if (domainChallenges.length === 0) return null;
         return (
           <div key={domain} style={{ marginBottom: '2.5rem' }}>
             <h2 style={{ fontSize: '1.15rem', color: '#00bfae', marginBottom: '0.75rem' }}>
@@ -138,11 +234,21 @@ export default function ChallengesPage() {
                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: '#737373', whiteSpace: 'nowrap' }}>
                       {c.id}
                     </td>
-                    <td style={{ fontWeight: 600 }}>{c.title}</td>
+                    <td style={{ fontWeight: 600 }}>
+                      {c.title}
+                      {'multiTurn' in c && c.multiTurn && (
+                        <span style={{
+                          fontSize: '0.65rem', color: '#a855f7', marginLeft: 6,
+                          fontWeight: 700, background: '#a855f715', padding: '0.1rem 0.4rem',
+                          borderRadius: 3, verticalAlign: 'middle',
+                        }}>
+                          MULTI-TURN
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <span style={{
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
+                        fontSize: '0.75rem', fontWeight: 600,
                         color: DIFF_COLORS[c.difficulty] ?? '#737373',
                       }}>
                         {c.difficulty}

@@ -7,7 +7,7 @@ export default function ScoringPage() {
       {/* Overview */}
       <section style={{ marginBottom: '3rem' }}>
         <p style={{ color: '#a3a3a3', lineHeight: 1.8, maxWidth: 700 }}>
-          Each model is scored on 49 Elasticsearch challenges across 6 domains and 4 difficulty
+          Each model is scored on 53 Elasticsearch challenges across 6 domains and 4 difficulty
           levels. The final score combines <strong style={{ color: '#e5e5e5' }}>query correctness</strong> and{' '}
           <strong style={{ color: '#e5e5e5' }}>response speed</strong>.
         </p>
@@ -102,7 +102,7 @@ export default function ScoringPage() {
         <div style={{ background: '#141414', border: '1px solid #262626', borderRadius: 12, padding: '1.5rem', maxWidth: 700 }}>
           <ul style={{ color: '#a3a3a3', lineHeight: 2, paddingLeft: '1.5rem' }}>
             <li><strong style={{ color: '#e5e5e5' }}>Total score</strong> = sum of all challenge scores</li>
-            <li><strong style={{ color: '#e5e5e5' }}>Max possible</strong> = 49 challenges &times; 100 = 4,900</li>
+            <li><strong style={{ color: '#e5e5e5' }}>Max possible</strong> = 53 challenges &times; 100 = 5,300</li>
             <li><strong style={{ color: '#e5e5e5' }}>Percentage</strong> = total / max &times; 100</li>
             <li><strong style={{ color: '#e5e5e5' }}>Leaderboard rank</strong> = sorted by percentage (ties broken by avg latency)</li>
           </ul>
@@ -128,12 +128,12 @@ export default function ScoringPage() {
             </thead>
             <tbody>
               {[
-                { name: 'Full-Text Search', count: 14 },
+                { name: 'Full-Text Search', count: 15 },
                 { name: 'Ingest & Indexing', count: 6 },
-                { name: 'Aggregations', count: 10 },
-                { name: 'Observability', count: 10 },
+                { name: 'Aggregations', count: 11 },
+                { name: 'Observability', count: 11 },
                 { name: 'Vector Search', count: 4 },
-                { name: 'Security / SIEM', count: 5 },
+                { name: 'Security / SIEM', count: 6 },
               ].map((d) => (
                 <tr key={d.name}>
                   <td>{d.name}</td>
@@ -143,8 +143,8 @@ export default function ScoringPage() {
               ))}
               <tr style={{ borderTop: '2px solid #262626' }}>
                 <td style={{ fontWeight: 700 }}>Total</td>
-                <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>49</td>
-                <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>4,900</td>
+                <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>53</td>
+                <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>5,300</td>
               </tr>
             </tbody>
           </table>

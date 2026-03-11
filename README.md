@@ -2,7 +2,7 @@
 
 **How well does your AI know Elasticsearch?**
 
-ElasticQuest is an open-source benchmark that tests AI models on real Elasticsearch query tasks. 44 challenges across 6 domains, scored and ranked on a public leaderboard.
+ElasticQuest is an open-source benchmark that tests AI models on real Elasticsearch query tasks. 53 challenges across 6 domains (including 4 multi-turn), scored and ranked on a public leaderboard.
 
 ```bash
 OPENROUTER_API_KEY=sk-or-... npx elastic-quest benchmark --pick
@@ -22,18 +22,20 @@ Live results: [elastic-quest-web-2t3s3mceqa-uc.a.run.app/leaderboard](https://el
 2. **Run the benchmark** — Each model gets 44 Elasticsearch challenges. The query response is executed and validated against expected results.
 3. **Compare results** — Scores are broken down by domain and difficulty. Results are submitted to the public leaderboard automatically.
 
-## 6 Domains, 44 Challenges
+## 6 Domains, 53 Challenges
 
 | Domain | Challenges | Topics |
 |---|---|---|
-| Full-Text Search | 14 | match, bool, phrase, fuzzy, dis_max, boosting, nested, function_score |
+| Full-Text Search | 15 | match, bool, phrase, fuzzy, dis_max, boosting, nested, function_score, multi-turn discovery |
 | Ingest & Indexing | 6 | Field types, sort, pagination, date ranges, terms queries |
-| Aggregations | 10 | terms, avg, stats, cardinality, date_histogram, percentiles, filters agg |
-| Observability | 5 | Log filtering, error analysis, HTTP status codes, pattern search |
+| Aggregations | 11 | terms, avg, stats, cardinality, date_histogram, percentiles, filters, multi-turn |
+| Observability | 11 | Log filtering, error spikes, latency percentiles, trace correlation, SLO uptime, multi-turn |
 | Vector Search | 4 | kNN, filtered kNN, hybrid text+vector, semantic + aggregations |
-| Security / SIEM | 5 | IP range filtering, brute force detection, DNS hunting, alert triage |
+| Security / SIEM | 6 | IP range, brute force detection, DNS hunting, alert triage, multi-turn investigation |
 
-Difficulty levels: **Beginner** (9) · **Intermediate** (14) · **Advanced** (15) · **Expert** (6)
+Includes **4 multi-turn challenges** where the model must explore the schema before writing the query.
+
+Difficulty levels: **Beginner** (9) · **Intermediate** (15) · **Advanced** (18) · **Expert** (11)
 
 ## Quick Start
 

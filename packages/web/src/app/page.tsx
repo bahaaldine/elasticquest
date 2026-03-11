@@ -4,7 +4,7 @@ const DOMAINS = [
   {
     icon: '&#128269;',
     name: 'Full-Text Search',
-    count: 14,
+    count: 15,
     desc: 'match, bool, phrase, fuzzy, dis_max, boosting, nested queries, function_score, field boosting',
   },
   {
@@ -16,13 +16,13 @@ const DOMAINS = [
   {
     icon: '&#128202;',
     name: 'Aggregations',
-    count: 10,
+    count: 11,
     desc: 'terms, avg, sum, stats, cardinality, date_histogram, percentiles, percentile_ranks, filters agg, 3-level nested aggs',
   },
   {
     icon: '&#128065;',
     name: 'Observability',
-    count: 10,
+    count: 11,
     desc: 'Log filtering, error spikes, latency percentiles, trace correlation, SLO uptime, top errors',
   },
   {
@@ -34,7 +34,7 @@ const DOMAINS = [
   {
     icon: '&#128274;',
     name: 'Security / SIEM',
-    count: 5,
+    count: 6,
     desc: 'IP range filtering, brute force detection, DNS threat hunting, alert triage, account correlation',
   },
 ];
