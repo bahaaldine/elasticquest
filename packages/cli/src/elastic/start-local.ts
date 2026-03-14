@@ -58,25 +58,31 @@ async function checkExistingInstance(
   const envContent = fs.readFileSync(envFile, 'utf-8');
   const env = parseEnvFile(envContent);
 
-  const esUrl = env.ES_LOCAL_URL;
+  const esUrl = env.ES_LOCAL_URL ?? `http://localhost:${env.ES_LOCAL_PORT ?? '9200'}`;
   const apiKey = env.ES_LOCAL_API_KEY;
+  const password = env.ES_LOCAL_PASSWORD;
 
-  if (!esUrl || !apiKey) return null;
+  if (!esUrl) return null;
+  if (!apiKey && !password) return null;
+
+  // Build auth header — prefer API key, fall back to basic auth
+  const authHeader = apiKey
+    ? `ApiKey ${apiKey}`
+    : `Basic ${Buffer.from(`elastic:${password}`).toString('base64')}`;
 
   // Check if ES is responsive
   try {
     const response = await fetch(esUrl, {
-      headers: { Authorization: `ApiKey ${apiKey}` },
+      headers: { Authorization: authHeader },
     });
     if (response.ok) {
-      const config: RealBackendConfig = {
-        node: esUrl,
-        apiKey,
-      };
+      const config: RealBackendConfig = apiKey
+        ? { node: esUrl, apiKey }
+        : { node: esUrl, username: 'elastic', password };
       return {
         backend: new RealBackend(config),
         esUrl,
-        apiKey,
+        apiKey: apiKey ?? '',
         workDir,
       };
     }
@@ -89,6 +95,7 @@ async function checkExistingInstance(
 
 /**
  * Parse a simple .env file into key-value pairs.
+ * Supports basic ${VAR} variable expansion within the same file.
  */
 function parseEnvFile(content: string): Record<string, string> {
   const result: Record<string, string> = {};
@@ -108,6 +115,14 @@ function parseEnvFile(content: string): Record<string, string> {
     }
     result[key] = value;
   }
+
+  // Expand ${VAR} references
+  for (const [key, value] of Object.entries(result)) {
+    result[key] = value.replace(/\$\{(\w+)\}/g, (_, varName) => {
+      return result[varName] ?? '';
+    });
+  }
+
   return result;
 }
 
