@@ -15,6 +15,7 @@ const DOMAIN_LABELS: Record<string, string> = {
   observability: 'Observability',
   'vector-search': 'Vector Search',
   security: 'Security / SIEM',
+  esql: 'ES|QL',
 };
 
 const DIFF_COLORS: Record<string, string> = {

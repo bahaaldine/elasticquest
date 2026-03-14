@@ -9,6 +9,7 @@ const DOMAIN_LABELS: Record<string, string> = {
   observability: 'Observability',
   'vector-search': 'Vector Search',
   security: 'Security / SIEM',
+  esql: 'ES|QL',
 };
 
 const DIFF_COLORS: Record<string, string> = {
@@ -79,6 +80,21 @@ const CHALLENGES = [
   { id: 'mt-2-explore-and-aggregate', domain: 'aggregations', difficulty: 'advanced', title: 'Explore Data, Then Aggregate', desc: 'Discover non-obvious field names, then compute revenue per region', multiTurn: true },
   { id: 'mt-3-unknown-logs', domain: 'observability', difficulty: 'advanced', title: 'Unknown Log Schema', desc: 'Investigate logs with non-standard field names (ts, severity, svc)', multiTurn: true },
   { id: 'mt-4-investigate', domain: 'security', difficulty: 'expert', title: 'Security Investigation', desc: 'Discover auth schema, find IPs with 3+ failed login attempts', multiTurn: true },
+  // ES|QL Scenarios (require real ES)
+  { id: 'esql-1-basic-filter', domain: 'esql', difficulty: 'beginner', title: 'ES|QL Basic Filtering', desc: 'FROM + WHERE + SORT + LIMIT on 600 articles', scenario: true },
+  { id: 'esql-2-stats-aggregation', domain: 'esql', difficulty: 'beginner', title: 'ES|QL Stats Aggregation', desc: 'STATS with COUNT/AVG grouped BY category', scenario: true },
+  { id: 'esql-3-eval-computed', domain: 'esql', difficulty: 'intermediate', title: 'ES|QL Computed Fields with EVAL', desc: 'EVAL + CASE for conditional classification', scenario: true },
+  { id: 'esql-4-log-error-analysis', domain: 'esql', difficulty: 'intermediate', title: 'ES|QL Log Error Analysis', desc: 'Error counting with COUNT_DISTINCT across 2500 logs', scenario: true },
+  { id: 'esql-5-time-bucket', domain: 'esql', difficulty: 'advanced', title: 'ES|QL Time-Bucketed Log Analysis', desc: 'BUCKET(@timestamp, 5 min) with log.level breakdown', scenario: true },
+  { id: 'esql-6-discover-and-query', domain: 'esql', difficulty: 'advanced', title: 'ES|QL Discovery and Query', desc: 'Multi-turn: discover schema then aggregate top authors', multiTurn: true, scenario: true },
+  // Observability Scenarios
+  { id: 'obs-esql-1-error-investigation', domain: 'observability', difficulty: 'intermediate', title: 'Log Error Investigation (ES|QL)', desc: 'Error timeline across 2500 microservice logs', scenario: true },
+  { id: 'obs-esql-2-error-breakdown', domain: 'observability', difficulty: 'intermediate', title: 'Service Error Breakdown (ES|QL)', desc: 'Count by service and log level', scenario: true },
+  { id: 'obs-esql-3-root-cause', domain: 'observability', difficulty: 'advanced', title: 'Root Cause Investigation (ES|QL)', desc: 'Multi-turn: funnel through noise to find upstream failure', multiTurn: true, scenario: true },
+  // Security Scenarios
+  { id: 'sec-esql-1-brute-force', domain: 'security', difficulty: 'intermediate', title: 'Brute Force Detection (ES|QL)', desc: 'Find IPs with 3+ failed auths in 1500 events', scenario: true },
+  { id: 'sec-esql-2-post-compromise', domain: 'security', difficulty: 'advanced', title: 'Post-Compromise Analysis (ES|QL)', desc: 'Timeline of attacker activity after successful login', scenario: true },
+  { id: 'sec-esql-3-attack-chain', domain: 'security', difficulty: 'expert', title: 'Full Attack Chain (ES|QL)', desc: 'Multi-turn: classify events into attack phases', multiTurn: true, scenario: true },
 ];
 
 const ALL_DOMAINS = [...new Set(CHALLENGES.map((c) => c.domain))];
@@ -107,7 +123,7 @@ export default function ChallengesPage() {
     <div className="leaderboard-page">
       <h1>Challenge Catalog</h1>
       <p className="subtitle">
-        53 Elasticsearch challenges across 6 domains and 4 difficulty levels
+        65 challenges + 12 skill-aligned scenarios across 7 domains and 4 difficulty levels
       </p>
 
       {/* Filters */}
@@ -243,6 +259,15 @@ export default function ChallengesPage() {
                           borderRadius: 3, verticalAlign: 'middle',
                         }}>
                           MULTI-TURN
+                        </span>
+                      )}
+                      {'scenario' in c && c.scenario && (
+                        <span style={{
+                          fontSize: '0.65rem', color: '#facc15', marginLeft: 6,
+                          fontWeight: 700, background: 'rgba(250, 204, 21, 0.1)', padding: '0.1rem 0.4rem',
+                          borderRadius: 3, verticalAlign: 'middle',
+                        }}>
+                          SCENARIO
                         </span>
                       )}
                     </td>

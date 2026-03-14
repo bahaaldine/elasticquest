@@ -37,6 +37,34 @@ const DOMAINS = [
     count: 6,
     desc: 'IP range filtering, brute force detection, DNS threat hunting, alert triage, account correlation',
   },
+  {
+    icon: '&#128736;',
+    name: 'ES|QL',
+    count: 6,
+    isNew: true,
+    desc: 'FROM, WHERE, STATS, EVAL with CASE, time-bucketed analysis, multi-turn discovery queries',
+  },
+];
+
+const SCENARIOS = [
+  {
+    skill: 'elasticsearch-esql',
+    name: 'ES|QL Queries',
+    count: 6,
+    desc: 'Basic filtering, stats aggregation, computed fields, time-bucketed analysis, multi-turn discovery',
+  },
+  {
+    skill: 'logs-search',
+    name: 'Log Investigation',
+    count: 3,
+    desc: 'Error timeline, service breakdown, multi-turn root cause analysis across 2500 logs',
+  },
+  {
+    skill: 'alert-triage',
+    name: 'Security Triage',
+    count: 3,
+    desc: 'Brute force detection, post-compromise analysis, full attack chain investigation in 1500 events',
+  },
 ];
 
 export const dynamic = 'force-dynamic';
@@ -48,8 +76,8 @@ export default async function HomePage() {
       <section className="hero">
         <h1>How well does your AI know Elasticsearch?</h1>
         <p>
-          53 challenges across 6 domains. Benchmark any LLM on real Elasticsearch
-          query tasks. Compare models on the public leaderboard.
+          65 challenges + 12 skill-aligned scenarios across 7 domains. Benchmark any LLM
+          on real Elasticsearch tasks. Compare models on the public leaderboard.
         </p>
         <div className="install-box">
           <span className="prompt">$</span>
@@ -80,7 +108,7 @@ export default async function HomePage() {
             <div className="step-num">2</div>
             <h3>Run the benchmark</h3>
             <p>
-              Each model gets 31 Elasticsearch challenges. The query response is
+              Each model gets Elasticsearch challenges. The query response is
               executed and validated against expected results.
             </p>
           </div>
@@ -102,7 +130,7 @@ export default async function HomePage() {
 
       {/* Domains */}
       <section className="domains-section">
-        <h2>6 Domains, 53 Challenges</h2>
+        <h2>7 Domains, 65 Challenges</h2>
         <p className="subtitle">
           From beginner match queries to expert-level hybrid vector search with nested aggregations
         </p>
@@ -113,10 +141,52 @@ export default async function HomePage() {
                 <span dangerouslySetInnerHTML={{ __html: d.icon }} />
                 {d.name}
                 <span className="badge">{d.count}</span>
+                {'isNew' in d && d.isNew && (
+                  <span style={{
+                    fontSize: '0.6rem', color: '#facc15', background: 'rgba(250, 204, 21, 0.15)',
+                    padding: '0.1rem 0.4rem', borderRadius: 3, fontWeight: 700, marginLeft: 4,
+                  }}>NEW</span>
+                )}
               </h3>
               <p>{d.desc}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Skill-Aligned Scenarios */}
+      <section className="domains-section" style={{ paddingTop: 0 }}>
+        <h2>12 Skill-Aligned Scenarios</h2>
+        <p className="subtitle">
+          Aligned to{' '}
+          <a href="https://github.com/elastic/agent-skills" target="_blank" rel="noopener noreferrer" style={{ color: '#00bfae' }}>
+            Elastic Agent Skills
+          </a>
+          . Run with and without skills to measure the uplift.
+        </p>
+        <div className="domains-grid">
+          {SCENARIOS.map((s) => (
+            <div key={s.skill} className="domain-card">
+              <h3>
+                {s.name}
+                <span className="badge">{s.count}</span>
+                <span style={{
+                  fontSize: '0.6rem', color: '#a855f7', background: 'rgba(168, 85, 247, 0.15)',
+                  padding: '0.1rem 0.4rem', borderRadius: 3, fontWeight: 700, marginLeft: 4,
+                }}>SCENARIO</span>
+              </h3>
+              <p>{s.desc}</p>
+              <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#737373' }}>
+                Skill: <code style={{ color: '#00bfae' }}>{s.skill}</code>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+          <div className="install-box" style={{ fontSize: '0.85rem' }}>
+            <span className="prompt">$</span>
+            <code>npx elastic-quest benchmark --scenarios --start-local --compare-skills -m openrouter:openai/gpt-4o</code>
+          </div>
         </div>
       </section>
 

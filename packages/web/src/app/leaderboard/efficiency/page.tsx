@@ -18,15 +18,10 @@ export default async function EfficiencyPage() {
       </p>
 
       {/* Tab navigation */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem' }}>
-        <a href="/leaderboard" style={{
-          padding: '0.5rem 1rem', borderRadius: 6, fontSize: '0.85rem',
-          background: '#141414', border: '1px solid #262626', color: '#737373', textDecoration: 'none',
-        }}>By Score</a>
-        <a href="/leaderboard/efficiency" style={{
-          padding: '0.5rem 1rem', borderRadius: 6, fontSize: '0.85rem',
-          background: '#00bfae', border: '1px solid #00bfae', color: '#0a0a0a', textDecoration: 'none', fontWeight: 600,
-        }}>By Efficiency</a>
+      <div className="tab-nav">
+        <a href="/leaderboard" className="tab">By Score</a>
+        <a href="/leaderboard/efficiency" className="tab tab-active">By Efficiency</a>
+        <a href="/leaderboard/scenarios" className="tab">Scenarios</a>
       </div>
 
       {withCost.length === 0 ? (
