@@ -50,6 +50,22 @@ const DOMAIN_LABELS: Record<string, string> = {
   esql: 'ES|QL',
 };
 
+const DOMAIN_FULL_LABELS: Record<string, string> = {
+  'full-text-search': 'Full-Text Search',
+  'ingest-indexing': 'Ingest & Indexing',
+  aggregations: 'Aggregations',
+  observability: 'Observability',
+  'vector-search': 'Vector Search',
+  security: 'Security',
+  esql: 'ES|QL',
+};
+
+/** Get the effective score for an entry — domain score if filtered, overall otherwise */
+function getEffectiveScore(entry: LeaderboardEntry, domainFilter: string | null): number {
+  if (!domainFilter) return entry.percentage;
+  return entry.domainScores[domainFilter] ?? 0;
+}
+
 type SortOption = 'score' | 'latency' | 'pass-rate' | 'newest';
 type ViewMode = 'grid' | 'list';
 
@@ -60,6 +76,7 @@ export default function LeaderboardPage() {
   const [gradeFilter, setGradeFilter] = useState<Grade | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>('score');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [domainFilter, setDomainFilter] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/leaderboard')
@@ -71,6 +88,9 @@ export default function LeaderboardPage() {
       .catch(() => setLoading(false));
   }, []);
 
+  // Collect all domains present across entries
+  const allDomains = [...new Set(entries.flatMap((e) => Object.keys(e.domainScores)))];
+
   const filtered = entries.filter((e) => {
     if (search) {
       const q = search.toLowerCase();
@@ -81,7 +101,10 @@ export default function LeaderboardPage() {
       )
         return false;
     }
-    if (gradeFilter && computeGrade(e.percentage) !== gradeFilter) return false;
+    // If domain filter is active, exclude models without that domain
+    if (domainFilter && !(domainFilter in e.domainScores)) return false;
+    const effectiveScore = getEffectiveScore(e, domainFilter);
+    if (gradeFilter && computeGrade(effectiveScore) !== gradeFilter) return false;
     return true;
   });
 
@@ -94,21 +117,31 @@ export default function LeaderboardPage() {
       case 'newest':
         return new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
       default:
-        return b.percentage - a.percentage || a.avgLatencyMs - b.avgLatencyMs;
+        // Sort by domain score when filtered, overall otherwise
+        return getEffectiveScore(b, domainFilter) - getEffectiveScore(a, domainFilter)
+          || a.avgLatencyMs - b.avgLatencyMs;
     }
   });
 
-  // Grade distribution
+  // Grade distribution based on effective score
   const gradeCounts: Record<Grade, number> = { S: 0, A: 0, B: 0, C: 0, D: 0, F: 0 };
   for (const e of entries) {
-    gradeCounts[computeGrade(e.percentage)]++;
+    const score = getEffectiveScore(e, domainFilter);
+    if (domainFilter && !(domainFilter in e.domainScores)) continue;
+    gradeCounts[computeGrade(score)]++;
   }
 
   return (
     <div className="leaderboard-page">
-      <h1>Model Leaderboard</h1>
+      <h1>
+        {domainFilter
+          ? `Best Models for ${DOMAIN_FULL_LABELS[domainFilter] ?? domainFilter}`
+          : 'Model Leaderboard'}
+      </h1>
       <p className="subtitle">
-        Best scores across {entries.length} model{entries.length !== 1 ? 's' : ''}
+        {domainFilter
+          ? `Ranked by ${DOMAIN_FULL_LABELS[domainFilter] ?? domainFilter} score across ${sorted.length} model${sorted.length !== 1 ? 's' : ''}`
+          : `Best scores across ${entries.length} model${entries.length !== 1 ? 's' : ''}`}
       </p>
 
       {/* Tabs */}
@@ -142,11 +175,25 @@ export default function LeaderboardPage() {
           className="filter-input"
         />
         <select
+          value={domainFilter ?? ''}
+          onChange={(e) => {
+            setDomainFilter(e.target.value || null);
+            setGradeFilter(null); // reset grade filter when domain changes
+          }}
+          className="filter-select"
+        >
+          <option value="">All domains</option>
+          {allDomains.map((d) => (
+            <option key={d} value={d}>{DOMAIN_FULL_LABELS[d] ?? d}</option>
+          ))}
+        </select>
+
+        <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortOption)}
           className="filter-select"
         >
-          <option value="score">Sort: Score</option>
+          <option value="score">Sort: {domainFilter ? DOMAIN_LABELS[domainFilter] + ' Score' : 'Score'}</option>
           <option value="latency">Sort: Fastest</option>
           <option value="pass-rate">Sort: Pass Rate</option>
           <option value="newest">Sort: Newest</option>
@@ -180,7 +227,8 @@ export default function LeaderboardPage() {
       ) : viewMode === 'grid' ? (
         <div className="model-grid">
           {sorted.map((entry) => {
-            const grade = computeGrade(entry.percentage);
+            const effectiveScore = getEffectiveScore(entry, domainFilter);
+            const grade = computeGrade(effectiveScore);
             const gradeColor = GRADE_COLORS[grade];
             return (
               <a
@@ -208,15 +256,23 @@ export default function LeaderboardPage() {
                 <div className="model-card-bar">
                   <div
                     className="model-card-bar-fill"
-                    style={{ width: `${entry.percentage}%`, background: gradeColor }}
+                    style={{ width: `${effectiveScore}%`, background: gradeColor }}
                   />
                 </div>
 
                 <div className="model-card-stats">
                   <div className="model-card-stat">
-                    <span className="model-card-stat-label">Score</span>
-                    <span className="model-card-stat-value">{entry.percentage}%</span>
+                    <span className="model-card-stat-label">
+                      {domainFilter ? DOMAIN_LABELS[domainFilter] : 'Score'}
+                    </span>
+                    <span className="model-card-stat-value">{effectiveScore}%</span>
                   </div>
+                  {domainFilter && (
+                    <div className="model-card-stat">
+                      <span className="model-card-stat-label">Overall</span>
+                      <span className="model-card-stat-value" style={{ color: '#737373' }}>{entry.percentage}%</span>
+                    </div>
+                  )}
                   <div className="model-card-stat">
                     <span className="model-card-stat-label">Passed</span>
                     <span className="model-card-stat-value">{entry.correct}/{entry.total}</span>
@@ -239,7 +295,15 @@ export default function LeaderboardPage() {
 
                 <div className="model-card-domains">
                   {Object.entries(entry.domainScores).map(([domain, pct]) => (
-                    <span key={domain} className="domain-chip">
+                    <span
+                      key={domain}
+                      className="domain-chip"
+                      style={domain === domainFilter ? {
+                        background: 'rgba(0, 191, 174, 0.15)',
+                        borderColor: '#00bfae',
+                        color: '#00bfae',
+                      } : undefined}
+                    >
                       {DOMAIN_LABELS[domain] ?? domain} {pct}%
                     </span>
                   ))}
@@ -263,7 +327,8 @@ export default function LeaderboardPage() {
           </thead>
           <tbody>
             {sorted.map((entry, i) => {
-              const grade = computeGrade(entry.percentage);
+              const effectiveScore = getEffectiveScore(entry, domainFilter);
+              const grade = computeGrade(effectiveScore);
               const gradeColor = GRADE_COLORS[grade];
               return (
                 <tr key={entry.modelId}>
@@ -281,15 +346,23 @@ export default function LeaderboardPage() {
                   </td>
                   <td className="score-col">
                     <span className="pct-track">
-                      <span className="pct-bar" style={{ width: `${entry.percentage}%`, background: gradeColor }} />
+                      <span className="pct-bar" style={{ width: `${effectiveScore}%`, background: gradeColor }} />
                     </span>
-                    {entry.percentage}%
+                    {effectiveScore}%
                   </td>
                   <td>{entry.correct}/{entry.total}</td>
                   <td>
                     <div className="domain-scores">
                       {Object.entries(entry.domainScores).map(([domain, pct]) => (
-                        <span key={domain} className="domain-chip">
+                        <span
+                          key={domain}
+                          className="domain-chip"
+                          style={domain === domainFilter ? {
+                            background: 'rgba(0, 191, 174, 0.15)',
+                            borderColor: '#00bfae',
+                            color: '#00bfae',
+                          } : undefined}
+                        >
                           {DOMAIN_LABELS[domain] ?? domain} {pct}%
                         </span>
                       ))}
