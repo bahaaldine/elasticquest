@@ -3,6 +3,7 @@ import type {
   ElasticBackend,
   Document,
   SearchResponse,
+  EsqlResponse,
   IndexMapping,
   IngestPipeline,
 } from '../types';
@@ -18,8 +19,10 @@ export interface RealBackendConfig {
 export class RealBackend implements ElasticBackend {
   mode: 'real' = 'real';
   private client: Client;
+  private nodeUrl: string;
 
   constructor(config: RealBackendConfig) {
+    this.nodeUrl = config.node;
     const clientOpts: Record<string, unknown> = {};
 
     if (config.cloudId) {
@@ -139,6 +142,24 @@ export class RealBackend implements ElasticBackend {
       body: query ? { query } : undefined,
     });
     return result.count;
+  }
+
+  async esql(query: string): Promise<EsqlResponse> {
+    const result = await this.client.transport.request({
+      method: 'POST',
+      path: '/_query',
+      body: { query },
+    }) as { columns: Array<{ name: string; type: string }>; values: unknown[][] };
+
+    return {
+      columns: result.columns ?? [],
+      values: result.values ?? [],
+    };
+  }
+
+  /** Get the node URL for this backend. */
+  getNode(): string {
+    return this.nodeUrl;
   }
 
   async putPipeline(id: string, pipeline: IngestPipeline): Promise<void> {

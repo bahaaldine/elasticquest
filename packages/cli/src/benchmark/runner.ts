@@ -8,14 +8,18 @@ import type {
 } from './types';
 import type {
   Challenge,
+  Scenario,
   Domain,
   Difficulty,
   SearchResponse,
+  EsqlResponse,
   ElasticBackend,
 } from '../types';
 import { SimulatedBackend } from '../elastic/simulated-backend';
 import { RealBackend } from '../elastic/real-backend';
 import { getAllChallenges } from '../challenges';
+import { getAllScenarios } from '../scenarios';
+import { loadSkill, formatSkillForPrompt } from '../skills';
 import { fetchOpenRouterModels } from './openrouter';
 
 const SYSTEM_PROMPT = `You are being evaluated on your ability to write Elasticsearch queries.
@@ -31,18 +35,34 @@ No markdown fences, no explanation, no commentary. Just the raw JSON object.
 Example response:
 {"query":{"match":{"title":"elasticsearch"}},"size":10}`;
 
+const ESQL_SYSTEM_PROMPT = `You are being evaluated on your ability to write ES|QL (Elasticsearch Query Language) queries.
+
+For each challenge, you'll receive:
+- A description of what to query
+- The index name and its mapping
+- Sample documents from the index
+
+Respond with ONLY a valid ES|QL query string — no markdown fences, no explanation, no commentary.
+Just the raw ES|QL query starting with FROM (or TS for time series).
+
+Example response:
+FROM my-index | WHERE status == "active" | STATS count = COUNT(*) BY category | SORT count DESC | LIMIT 10`;
+
 export class BenchmarkRunner {
   private model: ModelAdapter;
   private config: BenchmarkConfig;
   private backend: ElasticBackend;
 
-  constructor(model: ModelAdapter, config: BenchmarkConfig) {
+  constructor(model: ModelAdapter, config: BenchmarkConfig, backend?: ElasticBackend) {
     this.model = model;
     this.config = config;
 
-    if (config.backendMode === 'real' && config.esNode) {
+    if (backend) {
+      this.backend = backend;
+    } else if (config.backendMode === 'real' && config.esNode) {
       this.backend = new RealBackend({
         node: config.esNode,
+        apiKey: config.esApiKey,
         username: config.esUsername,
         password: config.esPassword,
       });
@@ -89,6 +109,352 @@ export class BenchmarkRunner {
     }
 
     return await this.buildResult(challengeScores);
+  }
+
+  /**
+   * Run skill-aligned scenarios. Requires a real Elasticsearch backend.
+   * Can be run with or without skill content injection.
+   */
+  async runScenarios(): Promise<BenchmarkResult> {
+    if (this.backend.mode !== 'real' || !this.backend.esql) {
+      throw new Error(
+        'Scenarios require a real Elasticsearch backend with ES|QL support.\n' +
+          'Use --start-local (Docker) or --real-es (Elastic Cloud).',
+      );
+    }
+
+    let scenarios = getAllScenarios();
+
+    // Filter by domain if specified
+    if (this.config.domains && this.config.domains.length > 0) {
+      scenarios = scenarios.filter((s) => this.config.domains!.includes(s.domain));
+    }
+
+    // Filter by difficulty if specified
+    if (this.config.difficulties && this.config.difficulties.length > 0) {
+      scenarios = scenarios.filter((s) =>
+        this.config.difficulties!.includes(s.difficulty),
+      );
+    }
+
+    const skillsLabel = this.config.skillsEnabled ? ' [+skills]' : ' [baseline]';
+    const challengeScores: ChallengeScore[] = [];
+    const total = scenarios.length;
+
+    for (let i = 0; i < total; i++) {
+      const scenario = scenarios[i];
+      const progress = `[${i + 1}/${total}]`;
+      process.stderr.write(
+        `${progress}${skillsLabel} ${scenario.domain} | ${scenario.difficulty} | ${scenario.title}...`,
+      );
+
+      const score = await this.runScenario(scenario);
+      challengeScores.push(score);
+
+      const mark = score.correct ? 'PASS' : 'FAIL';
+      process.stderr.write(
+        ` ${mark} ${score.score}/${score.maxScore} (${score.latencyMs}ms)\n`,
+      );
+
+      if (this.config.verbose && !score.correct) {
+        process.stderr.write(`  Feedback: ${score.feedback}\n`);
+        if (score.error) process.stderr.write(`  Error: ${score.error}\n`);
+      }
+    }
+
+    const result = await this.buildResult(challengeScores);
+    result.skillsEnabled = this.config.skillsEnabled;
+    return result;
+  }
+
+  private async runScenario(scenario: Scenario): Promise<ChallengeScore> {
+    // Set up the index with seed data
+    await this.backend.reset();
+    if (scenario.mapping) {
+      await this.backend.createIndex(scenario.indexName, scenario.mapping);
+    } else {
+      await this.backend.createIndex(scenario.indexName);
+    }
+    if (scenario.seedData.length > 0) {
+      await this.backend.bulkIndex(
+        scenario.seedData.map((doc) => ({
+          index: scenario.indexName,
+          id: doc._id,
+          doc: doc._source,
+        })),
+      );
+    }
+    if (scenario.pipeline) {
+      await this.backend.putPipeline(
+        `${scenario.id}-pipeline`,
+        scenario.pipeline,
+      );
+    }
+
+    let rawResponse = '';
+    let latencyMs = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let error: string | null = null;
+
+    try {
+      // Multi-turn: discovery first, then query
+      if (scenario.multiTurn && scenario.discoveryPrompt) {
+        const discoveryResponse = await this.model.complete(
+          scenario.discoveryPrompt +
+            `\n\nINDEX: ${scenario.indexName}\n\nMAPPING:\n` +
+            JSON.stringify(scenario.mapping ?? {}, null, 2) +
+            `\n\nSAMPLE DOCUMENTS (first 2):\n` +
+            scenario.seedData
+              .slice(0, 2)
+              .map((d) => JSON.stringify(d._source, null, 2))
+              .join('\n'),
+        );
+        latencyMs += discoveryResponse.latencyMs;
+        inputTokens += discoveryResponse.inputTokens ?? 0;
+        outputTokens += discoveryResponse.outputTokens ?? 0;
+
+        const queryPrompt =
+          this.buildScenarioPrompt(scenario) +
+          `\n\nYour earlier analysis of the data:\n${discoveryResponse.content}\n\n` +
+          `Now respond with ONLY the ${scenario.responseFormat === 'esql' ? 'ES|QL query' : 'JSON query body'}:`;
+
+        const response = await this.model.complete(queryPrompt);
+        rawResponse = response.content;
+        latencyMs += response.latencyMs;
+        inputTokens += response.inputTokens ?? 0;
+        outputTokens += response.outputTokens ?? 0;
+      } else {
+        const prompt = this.buildScenarioPrompt(scenario);
+        const response = await this.model.complete(prompt);
+        rawResponse = response.content;
+        latencyMs = response.latencyMs;
+        inputTokens = response.inputTokens ?? 0;
+        outputTokens = response.outputTokens ?? 0;
+      }
+
+      // Execute based on response format
+      let validationResponse: SearchResponse | EsqlResponse;
+      let parsedContent: Record<string, unknown> | null = null;
+
+      if (scenario.responseFormat === 'esql') {
+        const esqlQuery = this.extractEsql(rawResponse);
+        if (!esqlQuery) {
+          return this.failScore(
+            scenario,
+            'Failed to extract ES|QL query from model response.',
+            'ES|QL parse error',
+            rawResponse,
+            latencyMs,
+            inputTokens,
+            outputTokens,
+          );
+        }
+        parsedContent = { query: esqlQuery };
+        validationResponse = await this.backend.esql!(esqlQuery);
+      } else {
+        parsedContent = this.extractJson(rawResponse);
+        if (!parsedContent) {
+          return this.failScore(
+            scenario,
+            'Failed to parse JSON query from model response.',
+            'JSON parse error',
+            rawResponse,
+            latencyMs,
+            inputTokens,
+            outputTokens,
+          );
+        }
+        validationResponse = await this.backend.search(
+          scenario.indexName,
+          parsedContent,
+        );
+      }
+
+      const validation = await scenario.validate(
+        validationResponse,
+        this.backend,
+      );
+
+      // Apply speed multiplier
+      const speedMultiplier = this.getSpeedMultiplier(latencyMs);
+      const adjustedScore = Math.min(
+        validation.maxScore,
+        Math.round(validation.score * speedMultiplier),
+      );
+      const speedNote =
+        speedMultiplier > 1
+          ? ` Speed bonus: x${speedMultiplier} (${latencyMs}ms).`
+          : speedMultiplier < 1
+            ? ` Speed penalty: x${speedMultiplier} (${latencyMs}ms).`
+            : '';
+
+      return {
+        challengeId: scenario.id,
+        domain: scenario.domain,
+        difficulty: scenario.difficulty,
+        title: scenario.title,
+        score: adjustedScore,
+        maxScore: validation.maxScore,
+        correct: validation.correct,
+        feedback: validation.feedback + speedNote,
+        latencyMs,
+        inputTokens,
+        outputTokens,
+        rawModelResponse: rawResponse,
+        parsedQuery: parsedContent,
+        error: null,
+      };
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      return {
+        challengeId: scenario.id,
+        domain: scenario.domain,
+        difficulty: scenario.difficulty,
+        title: scenario.title,
+        score: 0,
+        maxScore: scenario.maxScore,
+        correct: false,
+        feedback: `Error: ${error}`,
+        latencyMs,
+        inputTokens,
+        outputTokens,
+        rawModelResponse: rawResponse,
+        parsedQuery: null,
+        error,
+      };
+    }
+  }
+
+  private buildScenarioPrompt(scenario: Scenario): string {
+    const isEsql = scenario.responseFormat === 'esql';
+    const systemPrompt = isEsql ? ESQL_SYSTEM_PROMPT : SYSTEM_PROMPT;
+
+    const sampleDocs = scenario.seedData
+      .slice(0, 3)
+      .map((d) => JSON.stringify(d._source, null, 2))
+      .join('\n');
+
+    const mappingStr = scenario.mapping
+      ? JSON.stringify(scenario.mapping, null, 2)
+      : 'No explicit mapping';
+
+    let prompt = `${systemPrompt}
+
+---
+
+CHALLENGE: ${scenario.title}
+DOMAIN: ${scenario.domain}
+DIFFICULTY: ${scenario.difficulty}
+
+DESCRIPTION:
+${scenario.description}
+
+INDEX: ${scenario.indexName}
+
+MAPPING:
+${mappingStr}
+
+SAMPLE DOCUMENTS (first 3 of ${scenario.seedData.length}):
+${sampleDocs}
+
+HINTS:
+${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
+
+    // Inject skill content if enabled
+    if (this.config.skillsEnabled) {
+      const skill = loadSkill(scenario.skillId, {
+        skillsPath: this.config.skillsPath,
+        referencePaths: scenario.skillReferencePaths,
+      });
+      if (skill) {
+        prompt += '\n\n' + formatSkillForPrompt(skill, {
+          maxReferenceLength: 30000,
+          includeReferences: true,
+        });
+      }
+    }
+
+    const responseInstruction = isEsql
+      ? 'Respond with ONLY the ES|QL query string:'
+      : 'Respond with ONLY the JSON query body for the _search API:';
+
+    prompt += `\n\n${responseInstruction}`;
+    return prompt;
+  }
+
+  /**
+   * Extract an ES|QL query from model response.
+   * Handles raw text, markdown code blocks, and backtick-wrapped queries.
+   */
+  private extractEsql(text: string): string | null {
+    const trimmed = text.trim();
+
+    // Try extracting from markdown code block (```esql or ```sql or ```)
+    const codeBlockMatch = trimmed.match(
+      /```(?:esql|sql|elasticsearch)?\s*\n?([\s\S]*?)\n?```/,
+    );
+    if (codeBlockMatch) {
+      const query = codeBlockMatch[1].trim();
+      if (query.startsWith('FROM') || query.startsWith('TS')) return query;
+    }
+
+    // Try the raw text — if it starts with FROM or TS, use it directly
+    if (trimmed.startsWith('FROM') || trimmed.startsWith('TS')) {
+      // Remove any trailing explanation after the query
+      // ES|QL queries end when there's a blank line or non-pipe continuation
+      const lines = trimmed.split('\n');
+      const queryLines: string[] = [];
+      for (const line of lines) {
+        const t = line.trim();
+        if (
+          queryLines.length === 0 &&
+          (t.startsWith('FROM') || t.startsWith('TS'))
+        ) {
+          queryLines.push(t);
+        } else if (queryLines.length > 0 && (t.startsWith('|') || t === '')) {
+          if (t !== '') queryLines.push(t);
+        } else if (queryLines.length > 0 && !t.startsWith('|')) {
+          break;
+        }
+      }
+      if (queryLines.length > 0) return queryLines.join(' ');
+    }
+
+    // Try finding FROM ... pattern anywhere in the text
+    const fromMatch = trimmed.match(/(?:FROM|TS)\s+[\w*.-]+[\s\S]*?(?:LIMIT\s+\d+|$)/i);
+    if (fromMatch) {
+      return fromMatch[0].trim();
+    }
+
+    return null;
+  }
+
+  private failScore(
+    scenario: Scenario,
+    feedback: string,
+    error: string,
+    rawResponse: string,
+    latencyMs: number,
+    inputTokens: number,
+    outputTokens: number,
+  ): ChallengeScore {
+    return {
+      challengeId: scenario.id,
+      domain: scenario.domain,
+      difficulty: scenario.difficulty,
+      title: scenario.title,
+      score: 0,
+      maxScore: scenario.maxScore,
+      correct: false,
+      feedback,
+      latencyMs,
+      inputTokens,
+      outputTokens,
+      rawModelResponse: rawResponse,
+      parsedQuery: null,
+      error,
+    };
   }
 
   private async runChallenge(challenge: Challenge): Promise<ChallengeScore> {
@@ -391,6 +757,7 @@ Respond with ONLY the JSON query body for the _search API:`;
       domainScores,
       difficultyScores,
       challengeScores: scores,
+      skillsEnabled: this.config.skillsEnabled,
     };
   }
 

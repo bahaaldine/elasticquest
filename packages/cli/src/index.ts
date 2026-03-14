@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { SimulatedBackend, RealBackend } from './elastic';
-import type { RealBackendConfig } from './elastic';
+import { SimulatedBackend, RealBackend, startLocal, stopLocal } from './elastic';
+import type { RealBackendConfig, StartLocalResult } from './elastic';
 import type { ElasticBackend, Domain, Difficulty } from './types';
 import { GameEngine } from './engine/game-engine';
 import { GameServer } from './protocol/game-server';
@@ -38,6 +38,13 @@ interface ParsedArgs {
   realEs?: boolean;             // auto-provision Elastic Cloud
   essApiKey?: string;           // Elastic Cloud API key
   essRegion?: string;           // Elastic Cloud region
+
+  // Scenario mode flags
+  scenarios?: boolean;          // --scenarios: run skill-aligned scenarios
+  skills?: boolean;             // --skills: inject skill content into prompts
+  skillsPath?: string;          // --skills-path: path to agent-skills repo
+  compareSkills?: boolean;      // --compare-skills: run with and without skills
+  startLocal?: boolean;         // --start-local: use Docker for local ES
 }
 
 function parseArgs(): ParsedArgs {
@@ -115,6 +122,22 @@ function parseArgs(): ParsedArgs {
         result.esConfig = result.esConfig ?? { node: '' };
         result.esConfig.cloudId = args[++i];
         break;
+      case '--scenarios':
+        result.scenarios = true;
+        break;
+      case '--skills':
+        result.skills = true;
+        break;
+      case '--skills-path':
+        result.skillsPath = args[++i];
+        break;
+      case '--compare-skills':
+        result.compareSkills = true;
+        result.scenarios = true; // implies scenario mode
+        break;
+      case '--start-local':
+        result.startLocal = true;
+        break;
       case '--leaderboard':
         result.command = 'leaderboard';
         break;
@@ -160,16 +183,23 @@ BENCHMARK OPTIONS:
   --pick, -p             Interactive model picker (uses OpenRouter)
   --api-key <key>        API key (or use env vars below)
   --base-url <url>       Custom API base URL (for OpenAI-compatible providers)
-  --domain <name>        Filter to domain (can repeat). Options:
-                           full-text-search, ingest-indexing, aggregations,
-                           observability, vector-search
-  --difficulty <level>   Filter to difficulty (can repeat). Options:
-                           beginner, intermediate, advanced, expert
-  --verbose, -v          Show detailed feedback for failed challenges
-  --real-es              Auto-provision Elastic Cloud (requires ESS_API_KEY)
-  --ess-api-key <key>    Elastic Cloud API key
-  --ess-region <region>  Elastic Cloud region (default: gcp-us-central1)
-  --no-submit            Skip submitting results to the public leaderboard
+   --domain <name>        Filter to domain (can repeat). Options:
+                            full-text-search, ingest-indexing, aggregations,
+                            observability, vector-search, security, esql
+   --difficulty <level>   Filter to difficulty (can repeat). Options:
+                            beginner, intermediate, advanced, expert
+   --verbose, -v          Show detailed feedback for failed challenges
+   --real-es              Auto-provision Elastic Cloud (requires ESS_API_KEY)
+   --start-local          Use Docker/Podman for local Elasticsearch (start-local)
+   --ess-api-key <key>    Elastic Cloud API key
+   --ess-region <region>  Elastic Cloud region (default: gcp-us-central1)
+   --no-submit            Skip submitting results to the public leaderboard
+
+SCENARIO OPTIONS (skill-aligned challenges):
+   --scenarios            Run skill-aligned scenarios (requires real ES)
+   --skills               Inject Elastic Agent Skills into prompts
+   --skills-path <path>   Path to agent-skills repo or installation
+   --compare-skills       Run scenarios with and without skills for comparison
 
 PLAY MODE OPTIONS:
   --mode <simulated|real>  Backend mode (default: simulated)
@@ -196,9 +226,15 @@ EXAMPLES:
   # Filter to specific domain
   elastic-quest benchmark --pick --domain aggregations -v
 
-  # View results
-  elastic-quest leaderboard
-  elastic-quest compare openrouter:openai/gpt-4o openrouter:anthropic/claude-sonnet-4
+   # View results
+   elastic-quest leaderboard
+   elastic-quest compare openrouter:openai/gpt-4o openrouter:anthropic/claude-sonnet-4
+
+   # Skill-aligned scenarios (requires Docker or Elastic Cloud)
+   elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --start-local
+   elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --real-es
+   elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --skills --start-local
+   elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --compare-skills --start-local
 `;
   process.stderr.write(help);
 }
@@ -270,11 +306,38 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
     process.exit(1);
   }
 
-  // Auto-provision Elastic Cloud if requested
+  // Validate: scenarios require a real backend
+  if (parsed.scenarios && !parsed.realEs && !parsed.startLocal && !parsed.esConfig) {
+    process.stderr.write(
+      'Error: --scenarios requires a real Elasticsearch backend.\n' +
+        'Use --start-local (Docker/Podman) or --real-es (Elastic Cloud).\n',
+    );
+    process.exit(1);
+  }
+
+  // Provision the backend
   let cloudDeploymentId: string | undefined;
   let essApiKey: string | undefined;
+  let startLocalResult: StartLocalResult | undefined;
+  let realBackend: ElasticBackend | undefined;
+  let backendLabel = 'Simulated';
 
-  if (parsed.realEs) {
+  if (parsed.startLocal) {
+    // Docker-based local Elasticsearch
+    try {
+      startLocalResult = await startLocal();
+      realBackend = startLocalResult.backend;
+      parsed.mode = 'real';
+      backendLabel = 'start-local (Docker)';
+      process.stderr.write(`  Elasticsearch URL: ${startLocalResult.esUrl}\n\n`);
+    } catch (error) {
+      process.stderr.write(
+        `\nFailed to start local Elasticsearch: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+      process.exit(1);
+    }
+  } else if (parsed.realEs) {
+    // Elastic Cloud
     essApiKey = parsed.essApiKey ?? process.env.ESS_API_KEY ?? '';
     if (!essApiKey) {
       process.stderr.write('Error: --real-es requires ESS_API_KEY env var or --ess-api-key flag.\n');
@@ -287,13 +350,13 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
         region: parsed.essRegion,
       });
       cloudDeploymentId = deployment.id;
-      // Override ES config for the benchmark runner to use
       parsed.esConfig = {
         node: deployment.esUrl,
         username: 'elastic',
         password: deployment.esPassword,
       };
       parsed.mode = 'real';
+      backendLabel = 'Elastic Cloud';
       process.stderr.write(`  Elasticsearch URL: ${deployment.esUrl}\n\n`);
     } catch (error) {
       process.stderr.write(
@@ -301,6 +364,11 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
       );
       process.exit(1);
     }
+  } else if (parsed.esConfig) {
+    // Direct ES connection (--es-node / --es-api-key)
+    realBackend = new RealBackend(parsed.esConfig);
+    parsed.mode = 'real';
+    backendLabel = `Real ES (${parsed.esConfig.node || 'cloud'})`;
   }
 
   const store = new BenchmarkStore();
@@ -314,7 +382,9 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
       process.stderr.write(`\n${'═'.repeat(70)}\n`);
       process.stderr.write(`  ElasticQuest Benchmark${progress}\n`);
       process.stderr.write(`  Model: ${modelId}\n`);
-      process.stderr.write(`  Backend: ${parsed.realEs ? 'Elastic Cloud' : 'Simulated'}\n`);
+      process.stderr.write(`  Backend: ${backendLabel}\n`);
+      if (parsed.scenarios) process.stderr.write(`  Mode: Scenarios (skill-aligned)\n`);
+      if (parsed.skills) process.stderr.write(`  Skills: enabled\n`);
       if (parsed.domains) process.stderr.write(`  Domains: ${parsed.domains.join(', ')}\n`);
       if (parsed.difficulties) process.stderr.write(`  Difficulties: ${parsed.difficulties.join(', ')}\n`);
       process.stderr.write(`${'═'.repeat(70)}\n\n`);
@@ -326,23 +396,67 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
           domains: parsed.domains,
           difficulties: parsed.difficulties,
           verbose: parsed.verbose,
-          backendMode: parsed.realEs ? 'real' : 'simulated',
+          backendMode: parsed.mode === 'real' ? 'real' : 'simulated',
           esNode: parsed.esConfig?.node,
+          esApiKey: parsed.esConfig?.apiKey,
           esUsername: parsed.esConfig?.username,
           esPassword: parsed.esConfig?.password,
+          scenarioMode: parsed.scenarios,
+          skillsEnabled: parsed.skills,
+          skillsPath: parsed.skillsPath,
+          compareSkills: parsed.compareSkills,
         };
 
-        const runner = new BenchmarkRunner(model, config);
-        const result = await runner.run();
+        if (parsed.scenarios) {
+          // Scenario mode: run skill-aligned challenges
+          if (parsed.compareSkills) {
+            // Run twice: without skills, then with skills
+            process.stderr.write('  --- Baseline (no skills) ---\n\n');
+            const baselineConfig = { ...config, skillsEnabled: false };
+            const baselineRunner = new BenchmarkRunner(model, baselineConfig, realBackend);
+            const baselineResult = await baselineRunner.runScenarios();
+            baselineResult.backendType = parsed.startLocal ? 'start-local' : 'cloud';
+            results.push(baselineResult);
+            process.stderr.write(formatResult(baselineResult));
 
-        store.addResult(result);
-        results.push(result);
+            process.stderr.write('\n  --- With Skills ---\n\n');
+            const skillsConfig = { ...config, skillsEnabled: true };
+            const skillsRunner = new BenchmarkRunner(model, skillsConfig, realBackend);
+            const skillsResult = await skillsRunner.runScenarios();
+            skillsResult.backendType = parsed.startLocal ? 'start-local' : 'cloud';
+            results.push(skillsResult);
+            process.stderr.write(formatResult(skillsResult));
 
-        process.stderr.write(formatResult(result));
+            // Show comparison
+            const uplift = skillsResult.percentage - baselineResult.percentage;
+            process.stderr.write(`\n${'─'.repeat(50)}\n`);
+            process.stderr.write(`  Skill Uplift: ${uplift >= 0 ? '+' : ''}${uplift}%\n`);
+            process.stderr.write(`  Baseline: ${baselineResult.percentage}% | With Skills: ${skillsResult.percentage}%\n`);
+            process.stderr.write(`${'─'.repeat(50)}\n`);
+          } else {
+            const runner = new BenchmarkRunner(model, config, realBackend);
+            const result = await runner.runScenarios();
+            result.backendType = parsed.startLocal ? 'start-local' : 'cloud';
+
+            store.addResult(result);
+            results.push(result);
+            process.stderr.write(formatResult(result));
+          }
+        } else {
+          // Standard challenge mode
+          const runner = new BenchmarkRunner(model, config, realBackend);
+          const result = await runner.run();
+
+          store.addResult(result);
+          results.push(result);
+          process.stderr.write(formatResult(result));
+        }
 
         // Submit to public leaderboard
         if (!parsed.noSubmit) {
-          await submitToLeaderboard(result, parsed.apiUrl);
+          for (const result of results) {
+            await submitToLeaderboard(result, parsed.apiUrl);
+          }
         }
       } catch (error) {
         process.stderr.write(
@@ -352,14 +466,15 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
       }
     }
   } finally {
-    // Always tear down Elastic Cloud deployment if we created one
+    // Always tear down provisioned infrastructure
     if (cloudDeploymentId && essApiKey) {
       await destroyDeployment(essApiKey, cloudDeploymentId);
     }
+    // Note: we don't stop start-local by default — it's reusable across runs
   }
 
   // Show leaderboard if multiple models
-  if (results.length > 1) {
+  if (results.length > 1 && !parsed.compareSkills) {
     process.stderr.write('\n');
     process.stderr.write(formatLeaderboard(store.getLeaderboard()));
   }

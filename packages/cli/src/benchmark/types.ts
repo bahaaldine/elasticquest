@@ -31,8 +31,15 @@ export interface BenchmarkConfig {
   verbose?: boolean;
   backendMode?: 'simulated' | 'real'; // default: simulated
   esNode?: string;           // ES URL for real mode
+  esApiKey?: string;         // ES API key for real mode
   esUsername?: string;       // ES username
   esPassword?: string;       // ES password
+
+  // Scenario mode (skill-aligned challenges)
+  scenarioMode?: boolean;    // run scenarios instead of (or alongside) challenges
+  skillsEnabled?: boolean;   // inject skill content into prompts
+  skillsPath?: string;       // path to agent-skills repo or installation
+  compareSkills?: boolean;   // run both with and without skills for comparison
 }
 
 export interface ChallengeScore {
@@ -87,6 +94,10 @@ export interface BenchmarkResult {
   domainScores: DomainScore[];
   difficultyScores: DifficultyScore[];
   challengeScores: ChallengeScore[];
+
+  // Scenario-specific fields
+  skillsEnabled?: boolean;   // whether skills were injected into prompts
+  backendType?: 'simulated' | 'cloud' | 'start-local';
 }
 
 export interface LeaderboardRow {

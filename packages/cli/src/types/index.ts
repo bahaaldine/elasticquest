@@ -76,6 +76,13 @@ export interface BulkOperation {
   delete?: { _index: string; _id: string };
 }
 
+// --- ES|QL types ---
+
+export interface EsqlResponse {
+  columns: Array<{ name: string; type: string }>;
+  values: unknown[][];
+}
+
 // --- Game types ---
 
 export type Domain =
@@ -84,7 +91,8 @@ export type Domain =
   | 'aggregations'
   | 'observability'
   | 'vector-search'
-  | 'security';
+  | 'security'
+  | 'esql';
 
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced' | 'expert';
 
@@ -104,6 +112,54 @@ export interface Challenge {
   timeLimitMs: number;
   multiTurn?: boolean;
   discoveryPrompt?: string;
+}
+
+// --- Scenario type (skill-aligned challenges) ---
+
+/** Expected response format from the model */
+export type ResponseFormat = 'query-dsl' | 'esql' | 'api-call';
+
+/**
+ * A Scenario is a skill-aligned challenge that can be run with or without
+ * skill context injected into the prompt. Scenarios require a real Elasticsearch
+ * backend (cloud or start-local) because they test ES|QL, Kibana APIs, etc.
+ * that the simulated backend cannot handle.
+ */
+export interface Scenario {
+  id: string;
+  skillId: string;               // maps to agent-skills skill name
+  domain: Domain;
+  difficulty: Difficulty;
+  title: string;
+  description: string;           // task description (what the user would ask)
+  hints: string[];
+
+  // Index setup
+  indexName: string;
+  seedData: Document[];
+  mapping?: IndexMapping;
+  pipeline?: IngestPipeline;
+
+  // Expected response format from the model
+  responseFormat: ResponseFormat;
+
+  // Validation — receives raw ES|QL or DSL response depending on format
+  validate: (
+    response: SearchResponse | EsqlResponse,
+    backend: ElasticBackend,
+  ) => Promise<ValidationResult>;
+
+  // Scoring
+  maxScore: number;
+  timeLimitMs: number;
+
+  // Multi-turn support
+  multiTurn?: boolean;
+  discoveryPrompt?: string;
+
+  // Skill content paths (relative to skills repo root)
+  skillPaths?: string[];         // e.g. ['elasticsearch/elasticsearch-esql/SKILL.md']
+  skillReferencePaths?: string[]; // e.g. ['elasticsearch/elasticsearch-esql/references/esql-reference.md']
 }
 
 export interface ValidationResult {
@@ -250,6 +306,9 @@ export interface ElasticBackend {
 
   search(index: string, query: Record<string, unknown>): Promise<SearchResponse>;
   count(index: string, query?: Record<string, unknown>): Promise<number>;
+
+  /** Execute an ES|QL query. Only available on real backends. */
+  esql?(query: string): Promise<EsqlResponse>;
 
   putPipeline(id: string, pipeline: IngestPipeline): Promise<void>;
   simulatePipeline(id: string, docs: Record<string, unknown>[]): Promise<Record<string, unknown>[]>;
