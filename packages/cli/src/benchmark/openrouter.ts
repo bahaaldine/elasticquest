@@ -37,17 +37,23 @@ export function getPopularModels(): string[] {
     'anthropic/claude-opus-4.5',
     'anthropic/claude-sonnet-4.5',
     'anthropic/claude-haiku-4.5',
+    'anthropic/claude-opus-4.1',
     'anthropic/claude-opus-4',
     'anthropic/claude-sonnet-4',
+    'anthropic/claude-3.7-sonnet',
     'anthropic/claude-3.5-sonnet',
     'anthropic/claude-3.5-haiku',
     // OpenAI
+    'openai/o3',
+    'openai/o3-mini',
+    'openai/o4-mini',
     'openai/gpt-4.1',
     'openai/gpt-4.1-mini',
     'openai/gpt-4.1-nano',
     'openai/gpt-4o',
     'openai/gpt-4o-mini',
     // Google
+    'google/gemini-2.5-pro',
     'google/gemini-2.5-pro-preview',
     'google/gemini-2.0-flash-001',
     // Meta
@@ -57,9 +63,22 @@ export function getPopularModels(): string[] {
     // DeepSeek
     'deepseek/deepseek-chat-v3-0324',
     'deepseek/deepseek-r1',
-    // Others
+    'deepseek/deepseek-r1-0528',
+    // xAI
+    'x-ai/grok-4',
+    'x-ai/grok-3',
+    // Qwen
+    'qwen/qwen3-235b-a22b',
+    'qwen/qwen3-max',
     'qwen/qwen-2.5-72b-instruct',
+    // Mistral
+    'mistralai/mistral-large-2512',
     'mistralai/mistral-large-2411',
+    'mistralai/devstral-2512',
+    // Cohere
+    'cohere/command-a',
+    // AI21
+    'ai21/jamba-large-1.7',
   ];
 }
 
