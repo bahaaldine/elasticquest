@@ -23,6 +23,7 @@ export default function RootLayout({
             <div className="nav-links">
               <a href="/leaderboard">Leaderboard</a>
               <a href="/leaderboard/scenarios">Scenarios</a>
+              <a href="/highlights">Highlights</a>
               <a href="/challenges">Challenges</a>
               <a href="/insights">Insights</a>
               <a href="/scoring">Scoring</a>
