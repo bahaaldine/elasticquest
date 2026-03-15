@@ -258,6 +258,8 @@ async function submitToLeaderboard(result: BenchmarkResult, apiUrl?: string): Pr
         totalInputTokens: result.totalInputTokens,
         totalOutputTokens: result.totalOutputTokens,
         costUsd: result.costUsd,
+        skillsEnabled: result.skillsEnabled,
+        backendType: result.backendType,
         domainScores: result.domainScores,
         difficultyScores: result.difficultyScores,
         challengeScores: result.challengeScores.map((cs) => ({
@@ -407,6 +409,8 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
           compareSkills: parsed.compareSkills,
         };
 
+        const newResults: BenchmarkResult[] = [];
+
         if (parsed.scenarios) {
           // Scenario mode: run skill-aligned challenges
           if (parsed.compareSkills) {
@@ -417,6 +421,7 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
             const baselineResult = await baselineRunner.runScenarios();
             baselineResult.backendType = parsed.startLocal ? 'start-local' : 'cloud';
             results.push(baselineResult);
+            newResults.push(baselineResult);
             process.stderr.write(formatResult(baselineResult));
 
             process.stderr.write('\n  --- With Skills ---\n\n');
@@ -425,6 +430,7 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
             const skillsResult = await skillsRunner.runScenarios();
             skillsResult.backendType = parsed.startLocal ? 'start-local' : 'cloud';
             results.push(skillsResult);
+            newResults.push(skillsResult);
             process.stderr.write(formatResult(skillsResult));
 
             // Show comparison
@@ -440,6 +446,7 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
 
             store.addResult(result);
             results.push(result);
+            newResults.push(result);
             process.stderr.write(formatResult(result));
           }
         } else {
@@ -449,12 +456,13 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
 
           store.addResult(result);
           results.push(result);
+          newResults.push(result);
           process.stderr.write(formatResult(result));
         }
 
-        // Submit to public leaderboard
+        // Submit new results to public leaderboard
         if (!parsed.noSubmit) {
-          for (const result of results) {
+          for (const result of newResults) {
             await submitToLeaderboard(result, parsed.apiUrl);
           }
         }
