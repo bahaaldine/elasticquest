@@ -77,6 +77,30 @@ export default function LeaderboardPage() {
   const [sortBy, setSortBy] = useState<SortOption>('score');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [domainFilter, setDomainFilter] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggleSelect(modelId: string, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(modelId)) next.delete(modelId);
+      else next.add(modelId);
+      return next;
+    });
+  }
+
+  function removeSelected(modelId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(modelId);
+      return next;
+    });
+  }
+
+  const compareUrl = selected.size >= 2
+    ? `/compare/${[...selected].map(encodeURIComponent).join('...')}`
+    : null;
 
   useEffect(() => {
     fetch('/api/leaderboard')
@@ -230,16 +254,26 @@ export default function LeaderboardPage() {
             const effectiveScore = getEffectiveScore(entry, domainFilter);
             const grade = computeGrade(effectiveScore);
             const gradeColor = GRADE_COLORS[grade];
+            const isSelected = selected.has(entry.modelId);
             return (
               <a
                 key={entry.modelId}
                 href={`/models/${encodeURIComponent(entry.modelId)}`}
-                className="model-card"
+                className={`model-card ${isSelected ? 'model-card-selected' : ''}`}
               >
                 <div className="model-card-header">
-                  <div style={{ minWidth: 0 }}>
-                    <div className="model-card-name">{entry.modelName}</div>
-                    <span className="provider-tag">{entry.provider}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                    <div
+                      className={`model-card-checkbox ${isSelected ? 'model-card-checkbox-checked' : ''}`}
+                      onClick={(e) => toggleSelect(entry.modelId, e)}
+                      title="Select for comparison"
+                    >
+                      {isSelected && <span style={{ color: '#0a0a0a', fontSize: '0.75rem', fontWeight: 800 }}>&#10003;</span>}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="model-card-name">{entry.modelName}</div>
+                      <span className="provider-tag">{entry.provider}</span>
+                    </div>
                   </div>
                   <div
                     className="model-card-grade"
@@ -316,6 +350,7 @@ export default function LeaderboardPage() {
         <table className="lb-table">
           <thead>
             <tr>
+              <th style={{ width: 30 }}></th>
               <th>#</th>
               <th>Model</th>
               <th>Grade</th>
@@ -330,8 +365,18 @@ export default function LeaderboardPage() {
               const effectiveScore = getEffectiveScore(entry, domainFilter);
               const grade = computeGrade(effectiveScore);
               const gradeColor = GRADE_COLORS[grade];
+              const isSelected = selected.has(entry.modelId);
               return (
-                <tr key={entry.modelId}>
+                <tr key={entry.modelId} style={isSelected ? { background: 'rgba(0, 191, 174, 0.05)' } : undefined}>
+                  <td>
+                    <div
+                      className={`model-card-checkbox ${isSelected ? 'model-card-checkbox-checked' : ''}`}
+                      onClick={(e) => toggleSelect(entry.modelId, e as unknown as React.MouseEvent)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {isSelected && <span style={{ color: '#0a0a0a', fontSize: '0.7rem', fontWeight: 800 }}>&#10003;</span>}
+                    </div>
+                  </td>
                   <td className={`rank-col ${i < 3 ? `rank-${i + 1}` : ''}`}>
                     {i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}
                   </td>
@@ -376,26 +421,49 @@ export default function LeaderboardPage() {
         </table>
       )}
 
-      {entries.length >= 2 && (
-        <div style={{ marginTop: '2rem', padding: '1.5rem', background: '#141414', border: '1px solid #262626', borderRadius: 12 }}>
-          <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Compare Models</h3>
-          <p style={{ color: '#737373', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-            Head-to-head comparison with challenge-by-challenge breakdown:
-          </p>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <a href={`/compare/${encodeURIComponent(entries[0].modelId)}...${encodeURIComponent(entries[1].modelId)}`}
-              style={{ color: '#00bfae', textDecoration: 'none', background: '#0a0a0a', border: '1px solid #262626', borderRadius: 6, padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
-              {entries[0].modelName} vs {entries[1].modelName}
-            </a>
-            {entries.length >= 3 && (
-              <a href={`/compare/${encodeURIComponent(entries[0].modelId)}...${encodeURIComponent(entries[2].modelId)}`}
-                style={{ color: '#00bfae', textDecoration: 'none', background: '#0a0a0a', border: '1px solid #262626', borderRadius: 6, padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
-                {entries[0].modelName} vs {entries[2].modelName}
-              </a>
-            )}
+      {/* Floating compare bar */}
+      {selected.size >= 2 && (
+        <div className="compare-bar">
+          <div className="compare-bar-models">
+            <span style={{ color: '#737373', fontSize: '0.8rem', marginRight: '0.25rem' }}>
+              Compare:
+            </span>
+            {[...selected].map((modelId) => {
+              const entry = entries.find((e) => e.modelId === modelId);
+              return (
+                <span key={modelId} className="compare-bar-chip">
+                  {entry?.modelName ?? modelId}
+                  <span
+                    className="compare-bar-chip-remove"
+                    onClick={() => removeSelected(modelId)}
+                  >
+                    &times;
+                  </span>
+                </span>
+              );
+            })}
           </div>
+          <a href={compareUrl!} className="compare-bar-btn">
+            Compare {selected.size} Models
+          </a>
+          <button className="compare-bar-clear" onClick={() => setSelected(new Set())}>
+            Clear
+          </button>
         </div>
       )}
+
+      {/* Hint when no models selected */}
+      {selected.size === 0 && entries.length >= 2 && !loading && (
+        <div style={{
+          textAlign: 'center', padding: '1rem', color: '#525252',
+          fontSize: '0.8rem', marginTop: '1rem',
+        }}>
+          Click the checkboxes on cards to select models for comparison
+        </div>
+      )}
+
+      {/* Spacer when compare bar is visible */}
+      {selected.size >= 2 && <div style={{ height: 70 }} />}
     </div>
   );
 }

@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getLeaderboard } from '@/lib/store';
+import { getLeaderboard, getScenarioLeaderboard } from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  const type = request.nextUrl.searchParams.get('type');
+
+  if (type === 'scenarios') {
+    const scenarios = await getScenarioLeaderboard();
+    return NextResponse.json(scenarios);
+  }
+
   const leaderboard = await getLeaderboard();
 
   const format = request.nextUrl.searchParams.get('format');
