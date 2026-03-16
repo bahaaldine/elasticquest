@@ -271,9 +271,10 @@ export class BenchmarkRunner {
       if (scenario.responseFormat === 'esql') {
         const esqlQuery = this.extractEsql(rawResponse);
         if (!esqlQuery) {
+          const parseExplanation = this.classifyError('esql parse error', rawResponse, scenario);
           steps.push({
             name: 'parse',
-            description: 'Failed to extract ES|QL query from model response',
+            description: parseExplanation,
             status: 'failure',
             error: 'Could not find a valid ES|QL query (expected FROM ...)',
             detail: rawResponse.slice(0, 200),
@@ -399,9 +400,10 @@ export class BenchmarkRunner {
       };
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+      const explanation = this.classifyError(error, rawResponse, scenario);
       steps.push({
         name: 'error',
-        description: 'Unexpected error during evaluation',
+        description: explanation,
         status: 'failure',
         error,
       });
@@ -495,30 +497,38 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
 
     // Try the raw text — if it starts with FROM or TS, use it directly
     if (trimmed.startsWith('FROM') || trimmed.startsWith('TS')) {
-      // Collect query lines, tracking open parens/brackets to handle
-      // multi-line CASE(), STATS, and other expressions
+      // Collect query lines, tracking open parens and continuation patterns
       const lines = trimmed.split('\n');
       const queryLines: string[] = [];
       let openParens = 0;
-      for (const line of lines) {
-        const t = line.trim();
+      for (let li = 0; li < lines.length; li++) {
+        const t = lines[li].trim();
         if (
           queryLines.length === 0 &&
           (t.startsWith('FROM') || t.startsWith('TS'))
         ) {
           queryLines.push(t);
           openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
-        } else if (queryLines.length > 0 && (t.startsWith('|') || openParens > 0)) {
-          // Pipe continuation OR inside an open paren/bracket (multi-line expression)
+        } else if (queryLines.length > 0 && t.startsWith('|')) {
+          // Pipe continuation
+          queryLines.push(t);
+          openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
+          if (openParens < 0) openParens = 0;
+        } else if (queryLines.length > 0 && openParens > 0) {
+          // Inside open parentheses (multi-line CASE, function args)
           if (t !== '') queryLines.push(t);
           openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
           if (openParens < 0) openParens = 0;
+        } else if (queryLines.length > 0 && t !== '' && this.isEsqlContinuation(t, queryLines)) {
+          // Continuation of a multi-line expression (STATS, BY, etc.)
+          queryLines.push(t);
+          openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
+          if (openParens < 0) openParens = 0;
         } else if (queryLines.length > 0 && t === '') {
-          // Blank line: if we have open parens, skip; otherwise end query
-          if (openParens > 0) continue;
+          // Blank line ends the query (unless inside parens, handled above)
           break;
-        } else if (queryLines.length > 0 && !t.startsWith('|') && openParens === 0) {
-          // Non-pipe line with no open parens = end of query (explanation text)
+        } else if (queryLines.length > 0) {
+          // Non-continuation line = end of query
           break;
         }
       }
@@ -532,6 +542,118 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
     }
 
     return null;
+  }
+
+  /**
+   * Check if a line is a continuation of a multi-line ES|QL expression.
+   * Handles STATS aggregation expressions, BY clauses, and comma-separated lists.
+   */
+  /**
+   * Classify an error into a human-readable explanation of what the model did wrong.
+   */
+  private classifyError(error: string, rawResponse: string, scenario?: Scenario): string {
+    const e = error.toLowerCase();
+    const r = rawResponse.toLowerCase();
+
+    // ES|QL parsing errors
+    if (e.includes('parsing_exception') && e.includes('no viable alternative')) {
+      return 'The model wrote an ES|QL query with invalid syntax. ' +
+        'It likely used a function or expression pattern that ES|QL does not support.';
+    }
+    if (e.includes('parsing_exception') && e.includes('unknown key')) {
+      const keyMatch = error.match(/Unknown key for .* in \[(\w+)\]/);
+      const key = keyMatch?.[1] ?? 'unknown';
+      if (scenario?.responseFormat === 'api-call') {
+        return `The model produced an Elasticsearch search query instead of an API request body. ` +
+          `It returned a Query DSL object but this scenario expects a ${scenario.skillId} API payload.`;
+      }
+      return `The model included an invalid field "${key}" in the query body that Elasticsearch does not recognize.`;
+    }
+    if (e.includes('verification_exception') && e.includes('unknown column')) {
+      const colMatch = error.match(/Unknown column \[([^\]]+)\]/);
+      const col = colMatch?.[1] ?? 'unknown';
+      return `The model referenced a column "${col}" that doesn't exist in the index. ` +
+        'This can happen when KEEP drops the column before SORT uses it, ' +
+        'or when the model guesses a field name that is not in the mapping.';
+    }
+    if (e.includes('verification_exception') && e.includes('unknown function')) {
+      const fnMatch = error.match(/Unknown function \[([^\]]+)\]/);
+      const fn = fnMatch?.[1] ?? 'unknown';
+      return `The model used a function "${fn}" that does not exist in ES|QL. ` +
+        'It likely hallucinated a function name from another query language (SQL, Spark, etc.).';
+    }
+    if (e.includes('aggregation or grouping expression required')) {
+      return 'The model wrote a STATS command but did not include any aggregation expressions. ' +
+        'This usually means the query was truncated (multi-line STATS not fully captured) ' +
+        'or the model forgot to specify what to aggregate.';
+    }
+    if (e.includes('mismatched input')) {
+      const inputMatch = error.match(/mismatched input '([^']+)'/);
+      const input = inputMatch?.[1] ?? '';
+      return `The model used "${input}" in a position where ES|QL expected a different command. ` +
+        'It may have used syntax from another query language (e.g., SQL JOIN, subquery).';
+    }
+
+    // JSON parse errors
+    if (e.includes('json parse error') || e.includes('could not extract valid json')) {
+      if (r.includes('from ') || r.includes('select ')) {
+        return 'The model returned an ES|QL or SQL query instead of JSON. ' +
+          'This scenario expected a JSON response body.';
+      }
+      return 'The model did not return valid JSON. It may have included explanation text, ' +
+        'markdown formatting, or an incomplete JSON structure.';
+    }
+    if (e.includes('esql parse error') || e.includes('could not find a valid esql query')) {
+      if (r.includes('"query"') || r.includes('"match"')) {
+        return 'The model returned a Query DSL JSON object instead of an ES|QL query. ' +
+          'This scenario expected an ES|QL query starting with FROM.';
+      }
+      return 'The model did not return a valid ES|QL query. ES|QL queries must start with FROM.';
+    }
+
+    // Validation failures (not errors, just wrong results)
+    if (e.includes('not sorted') || e.includes('sort')) {
+      return 'The query executed but the results were not sorted correctly.';
+    }
+    if (e.includes('0 rows') || e.includes('no results returned')) {
+      return 'The query executed but returned no results. The WHERE filter may be too restrictive, ' +
+        'or the field names/values do not match the actual data.';
+    }
+
+    // Network/infra errors
+    if (e.includes('fetch failed') || e.includes('econnrefused')) {
+      return 'Network error: could not reach the model provider API. ' +
+        'This is an infrastructure issue, not a model failure.';
+    }
+
+    // Generic
+    return 'The model produced a response that could not be evaluated. ' +
+      'Check the raw response and error details above.';
+  }
+
+  private isEsqlContinuation(line: string, prevLines: string[]): boolean {
+    const prev = prevLines[prevLines.length - 1]?.trim() ?? '';
+
+    // Previous line ends with comma = continuation of a list
+    if (prev.endsWith(',')) return true;
+
+    // Current line starts with BY (part of STATS ... BY grouping)
+    if (/^BY\s/i.test(line)) return true;
+
+    // Current line looks like an aggregation expression (name = FUNC(...))
+    if (/^\w+\s*=\s*\w+\s*\(/i.test(line)) return true;
+
+    // Previous line is just a command keyword (STATS, KEEP, SORT, etc.)
+    // and current line has the arguments
+    if (/^\|\s*(STATS|KEEP|SORT|DROP|RENAME|EVAL|WHERE|DISSECT|GROK)\s*$/i.test(prev)) return true;
+
+    // Current line starts with ASC/DESC (SORT continuation)
+    if (/^(ASC|DESC)\b/i.test(line)) return true;
+
+    // Current line starts with AND/OR (WHERE continuation)
+    if (/^(AND|OR)\s/i.test(line)) return true;
+
+    return false;
   }
 
   private failScore(
@@ -749,9 +871,10 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
       };
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+      const explanation = this.classifyError(error, rawResponse);
       steps.push({
         name: 'error',
-        description: `Unexpected error during evaluation`,
+        description: explanation,
         status: 'failure',
         error,
       });
