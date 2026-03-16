@@ -299,7 +299,36 @@ export class BenchmarkRunner {
           durationMs: Date.now() - execStart,
           detail: `${esqlResp.columns?.length ?? 0} columns, ${esqlResp.values?.length ?? 0} rows`,
         });
+      } else if (scenario.responseFormat === 'api-call') {
+        // API call scenarios: validate JSON structure directly, don't execute against ES
+        parsedContent = this.extractJson(rawResponse);
+        if (!parsedContent) {
+          steps.push({
+            name: 'parse',
+            description: 'Failed to parse JSON API request body from model response',
+            status: 'failure',
+            error: 'Could not extract valid JSON',
+            detail: rawResponse.slice(0, 200),
+          });
+          return this.failScore(scenario, 'Failed to parse JSON from model response.', 'JSON parse error', rawResponse, latencyMs, inputTokens, outputTokens, steps);
+        }
+        steps.push({
+          name: 'parse',
+          description: 'API request body extracted from model response',
+          status: 'success',
+          detail: JSON.stringify(parsedContent).slice(0, 200),
+        });
+
+        // For api-call, we pass the parsed JSON as a mock SearchResponse to validate
+        // The validate function checks the JSON structure, not query results
+        validationResponse = parsedContent as unknown as SearchResponse;
+        steps.push({
+          name: 'execute',
+          description: 'API call validation (structure check, no ES execution)',
+          status: 'success',
+        });
       } else {
+        // query-dsl format: execute against ES
         parsedContent = this.extractJson(rawResponse);
         if (!parsedContent) {
           steps.push({

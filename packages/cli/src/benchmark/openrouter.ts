@@ -45,7 +45,12 @@ export function buildPopularList(
   allModels: OpenRouterModel[],
   maxPerProvider = 3,
 ): string[] {
-  // Filter to benchmark-worthy providers, non-free, text-capable
+  // Filter out non-generative, non-benchmark-worthy models
+  const EXCLUDED_PATTERNS = [
+    'guard', 'shield', 'embed', 'rerank', 'tts', 'whisper',
+    'moderation', 'safety', 'classifier', 'vision-preview',
+  ];
+
   const candidates = allModels.filter((m) => {
     const provider = m.id.split('/')[0];
     if (!BENCHMARK_PROVIDERS.has(provider)) return false;
@@ -55,6 +60,9 @@ export function buildPopularList(
     // Must have a prompt price (not free/zero)
     const price = parseFloat(m.pricing.prompt);
     if (isNaN(price) || price <= 0) return false;
+    // Exclude non-generative models (safety classifiers, embedders, etc.)
+    const idLower = m.id.toLowerCase();
+    if (EXCLUDED_PATTERNS.some((p) => idLower.includes(p))) return false;
     return true;
   });
 
