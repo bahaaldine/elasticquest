@@ -89,7 +89,8 @@ export function generateAuditLogs(count = 200, seed = 42): Document[] {
   const pick = <T>(arr: T[]): T => arr[Math.floor(rng() * arr.length)];
   const docs: Document[] = [];
 
-  const baseTime = new Date('2024-07-20T00:00:00Z').getTime();
+  // Use recent timestamps so time-based queries (NOW() - 24h) work
+  const baseTime = Date.now() - 12 * 60 * 60 * 1000; // 12 hours ago
   const durationMs = 24 * 60 * 60 * 1000;
 
   // Cumulative weights for event type selection

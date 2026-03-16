@@ -76,8 +76,9 @@ export function generateLlmTraces(count = 300, seed = 42): Document[] {
   const pick = <T>(arr: T[]): T => arr[Math.floor(rng() * arr.length)];
   const docs: Document[] = [];
 
-  const baseTime = new Date('2024-08-10T09:00:00Z').getTime();
-  const durationMs = 8 * 60 * 60 * 1000; // 8 hours
+  // Use recent timestamps so time-based queries (NOW() - 24h) work
+  const baseTime = Date.now() - 6 * 60 * 60 * 1000; // 6 hours ago
+  const durationMs = 4 * 60 * 60 * 1000; // 4 hours
 
   for (let i = 0; i < count; i++) {
     const offsetMs = Math.floor(rng() * durationMs);
@@ -215,7 +216,8 @@ export function generateApmTransactions(count = 500, seed = 42): Document[] {
   const pick = <T>(arr: T[]): T => arr[Math.floor(rng() * arr.length)];
   const docs: Document[] = [];
 
-  const baseTime = new Date('2024-08-12T10:00:00Z').getTime();
+  // Use recent timestamps so time-based queries (NOW() - 24h) work
+  const baseTime = Date.now() - 4 * 60 * 60 * 1000; // 4 hours ago
   const durationMs = 2 * 60 * 60 * 1000; // 2 hours
 
   for (let i = 0; i < count; i++) {

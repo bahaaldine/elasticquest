@@ -102,8 +102,8 @@ export function generateSecurityEvents(count = 1500, seed = 42): Document[] {
   const pick = <T>(arr: T[]): T => arr[Math.floor(rng() * arr.length)];
   const docs: Document[] = [];
 
-  // Time range: 24 hours
-  const baseTime = new Date('2024-06-15T00:00:00Z').getTime();
+  // Use recent timestamps so time-based queries work
+  const baseTime = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
   const durationMs = 24 * 60 * 60 * 1000;
 
   // Attack window: 03:00 - 03:05 (brute force + post-compromise)

@@ -487,15 +487,19 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
     );
     if (codeBlockMatch) {
       const query = codeBlockMatch[1].trim();
-      if (query.startsWith('FROM') || query.startsWith('TS')) return query;
+      if (query.startsWith('FROM') || query.startsWith('TS')) {
+        // Normalize multi-line query: collapse newlines but preserve spaces
+        return query.split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
+      }
     }
 
     // Try the raw text — if it starts with FROM or TS, use it directly
     if (trimmed.startsWith('FROM') || trimmed.startsWith('TS')) {
-      // Remove any trailing explanation after the query
-      // ES|QL queries end when there's a blank line or non-pipe continuation
+      // Collect query lines, tracking open parens/brackets to handle
+      // multi-line CASE(), STATS, and other expressions
       const lines = trimmed.split('\n');
       const queryLines: string[] = [];
+      let openParens = 0;
       for (const line of lines) {
         const t = line.trim();
         if (
@@ -503,9 +507,18 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
           (t.startsWith('FROM') || t.startsWith('TS'))
         ) {
           queryLines.push(t);
-        } else if (queryLines.length > 0 && (t.startsWith('|') || t === '')) {
+          openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
+        } else if (queryLines.length > 0 && (t.startsWith('|') || openParens > 0)) {
+          // Pipe continuation OR inside an open paren/bracket (multi-line expression)
           if (t !== '') queryLines.push(t);
-        } else if (queryLines.length > 0 && !t.startsWith('|')) {
+          openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
+          if (openParens < 0) openParens = 0;
+        } else if (queryLines.length > 0 && t === '') {
+          // Blank line: if we have open parens, skip; otherwise end query
+          if (openParens > 0) continue;
+          break;
+        } else if (queryLines.length > 0 && !t.startsWith('|') && openParens === 0) {
+          // Non-pipe line with no open parens = end of query (explanation text)
           break;
         }
       }

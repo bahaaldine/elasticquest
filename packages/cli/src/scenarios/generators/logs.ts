@@ -223,7 +223,8 @@ export function generateLogs(count = 2500, seed = 42): Document[] {
   const pick = <T>(arr: T[]): T => arr[Math.floor(rng() * arr.length)];
   const docs: Document[] = [];
 
-  const baseTime = new Date('2024-06-15T14:00:00Z').getTime();
+  // Use recent timestamps so time-based queries work
+  const baseTime = Date.now() - 60 * 60 * 1000; // 1 hour ago
   const durationMs = 45 * 60 * 1000; // 45 minutes
 
   // Incident window: 14:10 to 14:25
@@ -336,8 +337,8 @@ export function getLogFacts(docs: Document[]): {
     incidentServices: ['payment-gateway', 'checkout-service'],
     rootCauseMessage: 'ECONNREFUSED: Connection refused to stripe-api.example.com:443',
     incidentTimeRange: {
-      start: '2024-06-15T14:10:00Z',
-      end: '2024-06-15T14:25:00Z',
+      start: new Date(Date.now() - 50 * 60 * 1000).toISOString(), // ~50 min ago
+      end: new Date(Date.now() - 35 * 60 * 1000).toISOString(),   // ~35 min ago
     },
   };
 }
