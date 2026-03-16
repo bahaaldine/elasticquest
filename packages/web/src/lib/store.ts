@@ -39,6 +39,15 @@ export interface ScoreSubmission {
   backendType?: 'simulated' | 'cloud' | 'start-local';
 }
 
+export interface EvalStep {
+  name: string;
+  description: string;
+  status: 'success' | 'failure' | 'skipped';
+  durationMs?: number;
+  detail?: string;
+  error?: string;
+}
+
 export interface ChallengeDetail {
   challengeId: string;
   domain: string;
@@ -49,6 +58,7 @@ export interface ChallengeDetail {
   correct: boolean;
   feedback: string;
   latencyMs: number;
+  evalSteps?: EvalStep[];
 }
 
 export interface LeaderboardEntry {

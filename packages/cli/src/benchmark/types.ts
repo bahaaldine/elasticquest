@@ -42,6 +42,22 @@ export interface BenchmarkConfig {
   compareSkills?: boolean;   // run both with and without skills for comparison
 }
 
+/** A single step in the evaluation pipeline — tracks what happened and why. */
+export interface EvalStep {
+  /** Step name: setup, prompt, model_call, parse, execute, validate, speed_adjust */
+  name: string;
+  /** Human-readable description of what happened */
+  description: string;
+  /** Step outcome */
+  status: 'success' | 'failure' | 'skipped';
+  /** Time taken for this step (ms) */
+  durationMs?: number;
+  /** Key data produced or consumed at this step */
+  detail?: string;
+  /** For failures: what went wrong */
+  error?: string;
+}
+
 export interface ChallengeScore {
   challengeId: string;
   domain: Domain;
@@ -57,6 +73,8 @@ export interface ChallengeScore {
   rawModelResponse: string;
   parsedQuery: Record<string, unknown> | null;
   error: string | null;
+  /** Step-by-step trace of the evaluation pipeline */
+  evalSteps?: EvalStep[];
 }
 
 export interface DomainScore {

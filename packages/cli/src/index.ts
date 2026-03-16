@@ -272,6 +272,7 @@ async function submitToLeaderboard(result: BenchmarkResult, apiUrl?: string): Pr
           correct: cs.correct,
           feedback: cs.feedback,
           latencyMs: cs.latencyMs,
+          evalSteps: cs.evalSteps,
         })),
       }),
     });

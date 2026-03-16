@@ -3,6 +3,7 @@ import type {
   BenchmarkConfig,
   BenchmarkResult,
   ChallengeScore,
+  EvalStep,
   DomainScore,
   DifficultyScore,
 } from './types';
@@ -168,7 +169,10 @@ export class BenchmarkRunner {
   }
 
   private async runScenario(scenario: Scenario): Promise<ChallengeScore> {
-    // Set up the index with seed data
+    const steps: EvalStep[] = [];
+
+    // Step 1: Setup
+    const setupStart = Date.now();
     await this.backend.reset();
     if (scenario.mapping) {
       await this.backend.createIndex(scenario.indexName, scenario.mapping);
@@ -185,11 +189,14 @@ export class BenchmarkRunner {
       );
     }
     if (scenario.pipeline) {
-      await this.backend.putPipeline(
-        `${scenario.id}-pipeline`,
-        scenario.pipeline,
-      );
+      await this.backend.putPipeline(`${scenario.id}-pipeline`, scenario.pipeline);
     }
+    steps.push({
+      name: 'setup',
+      description: `Index "${scenario.indexName}" created with ${scenario.seedData.length} docs`,
+      status: 'success',
+      durationMs: Date.now() - setupStart,
+    });
 
     let rawResponse = '';
     let latencyMs = 0;
@@ -198,130 +205,185 @@ export class BenchmarkRunner {
     let error: string | null = null;
 
     try {
-      // Multi-turn: discovery first, then query
+      // Step 2: Model call(s)
       if (scenario.multiTurn && scenario.discoveryPrompt) {
         const discoveryResponse = await this.model.complete(
           scenario.discoveryPrompt +
             `\n\nINDEX: ${scenario.indexName}\n\nMAPPING:\n` +
             JSON.stringify(scenario.mapping ?? {}, null, 2) +
             `\n\nSAMPLE DOCUMENTS (first 2):\n` +
-            scenario.seedData
-              .slice(0, 2)
-              .map((d) => JSON.stringify(d._source, null, 2))
-              .join('\n'),
+            scenario.seedData.slice(0, 2).map((d) => JSON.stringify(d._source, null, 2)).join('\n'),
         );
         latencyMs += discoveryResponse.latencyMs;
         inputTokens += discoveryResponse.inputTokens ?? 0;
         outputTokens += discoveryResponse.outputTokens ?? 0;
+        steps.push({
+          name: 'discovery_call',
+          description: 'Multi-turn discovery: model analyzed schema and data',
+          status: 'success',
+          durationMs: discoveryResponse.latencyMs,
+          detail: `${discoveryResponse.inputTokens ?? 0} in / ${discoveryResponse.outputTokens ?? 0} out tokens`,
+        });
 
-        const queryPrompt =
-          this.buildScenarioPrompt(scenario) +
+        const queryPrompt = this.buildScenarioPrompt(scenario) +
           `\n\nYour earlier analysis of the data:\n${discoveryResponse.content}\n\n` +
           `Now respond with ONLY the ${scenario.responseFormat === 'esql' ? 'ES|QL query' : 'JSON query body'}:`;
-
         const response = await this.model.complete(queryPrompt);
         rawResponse = response.content;
         latencyMs += response.latencyMs;
         inputTokens += response.inputTokens ?? 0;
         outputTokens += response.outputTokens ?? 0;
+        steps.push({
+          name: 'model_call',
+          description: 'Model generated query using discovery context',
+          status: 'success',
+          durationMs: response.latencyMs,
+          detail: `${response.inputTokens ?? 0} in / ${response.outputTokens ?? 0} out tokens`,
+        });
       } else {
         const prompt = this.buildScenarioPrompt(scenario);
+        const skillNote = this.config.skillsEnabled ? ' (with skill injected)' : '';
+        steps.push({
+          name: 'prompt',
+          description: `Prompt built for ${scenario.responseFormat} response${skillNote}`,
+          status: 'success',
+          detail: `${prompt.length} chars`,
+        });
+
         const response = await this.model.complete(prompt);
         rawResponse = response.content;
         latencyMs = response.latencyMs;
         inputTokens = response.inputTokens ?? 0;
         outputTokens = response.outputTokens ?? 0;
+        steps.push({
+          name: 'model_call',
+          description: `Model responded in ${response.latencyMs}ms`,
+          status: 'success',
+          durationMs: response.latencyMs,
+          detail: `${inputTokens} in / ${outputTokens} out tokens`,
+        });
       }
 
-      // Execute based on response format
+      // Step 3: Parse
       let validationResponse: SearchResponse | EsqlResponse;
       let parsedContent: Record<string, unknown> | null = null;
 
       if (scenario.responseFormat === 'esql') {
         const esqlQuery = this.extractEsql(rawResponse);
         if (!esqlQuery) {
-          return this.failScore(
-            scenario,
-            'Failed to extract ES|QL query from model response.',
-            'ES|QL parse error',
-            rawResponse,
-            latencyMs,
-            inputTokens,
-            outputTokens,
-          );
+          steps.push({
+            name: 'parse',
+            description: 'Failed to extract ES|QL query from model response',
+            status: 'failure',
+            error: 'Could not find a valid ES|QL query (expected FROM ...)',
+            detail: rawResponse.slice(0, 200),
+          });
+          return this.failScore(scenario, 'Failed to extract ES|QL query from model response.', 'ES|QL parse error', rawResponse, latencyMs, inputTokens, outputTokens, steps);
         }
         parsedContent = { query: esqlQuery };
+        steps.push({
+          name: 'parse',
+          description: 'ES|QL query extracted from model response',
+          status: 'success',
+          detail: esqlQuery.slice(0, 200),
+        });
+
+        // Step 4: Execute
+        const execStart = Date.now();
         validationResponse = await this.backend.esql!(esqlQuery);
+        const esqlResp = validationResponse as EsqlResponse;
+        steps.push({
+          name: 'execute',
+          description: `ES|QL query executed against real Elasticsearch`,
+          status: 'success',
+          durationMs: Date.now() - execStart,
+          detail: `${esqlResp.columns?.length ?? 0} columns, ${esqlResp.values?.length ?? 0} rows`,
+        });
       } else {
         parsedContent = this.extractJson(rawResponse);
         if (!parsedContent) {
-          return this.failScore(
-            scenario,
-            'Failed to parse JSON query from model response.',
-            'JSON parse error',
-            rawResponse,
-            latencyMs,
-            inputTokens,
-            outputTokens,
-          );
+          steps.push({
+            name: 'parse',
+            description: 'Failed to parse JSON query from model response',
+            status: 'failure',
+            error: 'Could not extract valid JSON',
+            detail: rawResponse.slice(0, 200),
+          });
+          return this.failScore(scenario, 'Failed to parse JSON query from model response.', 'JSON parse error', rawResponse, latencyMs, inputTokens, outputTokens, steps);
         }
-        validationResponse = await this.backend.search(
-          scenario.indexName,
-          parsedContent,
-        );
+        steps.push({
+          name: 'parse',
+          description: 'JSON query extracted from model response',
+          status: 'success',
+          detail: JSON.stringify(parsedContent).slice(0, 200),
+        });
+
+        const execStart = Date.now();
+        validationResponse = await this.backend.search(scenario.indexName, parsedContent);
+        steps.push({
+          name: 'execute',
+          description: `Query executed against "${scenario.indexName}"`,
+          status: 'success',
+          durationMs: Date.now() - execStart,
+        });
       }
 
-      const validation = await scenario.validate(
-        validationResponse,
-        this.backend,
-      );
+      // Step 5: Validate
+      const valStart = Date.now();
+      const validation = await scenario.validate(validationResponse, this.backend);
+      steps.push({
+        name: 'validate',
+        description: validation.correct
+          ? `Validation passed: ${validation.score}/${validation.maxScore}`
+          : `Validation failed: ${validation.score}/${validation.maxScore}`,
+        status: validation.correct ? 'success' : 'failure',
+        durationMs: Date.now() - valStart,
+        detail: validation.feedback,
+        error: validation.correct ? undefined : validation.feedback,
+      });
 
-      // Apply speed multiplier
+      // Step 6: Speed adjustment
       const speedMultiplier = this.getSpeedMultiplier(latencyMs);
-      const adjustedScore = Math.min(
-        validation.maxScore,
-        Math.round(validation.score * speedMultiplier),
-      );
-      const speedNote =
-        speedMultiplier > 1
-          ? ` Speed bonus: x${speedMultiplier} (${latencyMs}ms).`
-          : speedMultiplier < 1
-            ? ` Speed penalty: x${speedMultiplier} (${latencyMs}ms).`
-            : '';
+      const adjustedScore = Math.min(validation.maxScore, Math.round(validation.score * speedMultiplier));
+      const speedNote = speedMultiplier > 1
+        ? ` Speed bonus: x${speedMultiplier} (${latencyMs}ms).`
+        : speedMultiplier < 1
+          ? ` Speed penalty: x${speedMultiplier} (${latencyMs}ms).`
+          : '';
+      if (speedMultiplier !== 1) {
+        steps.push({
+          name: 'speed_adjust',
+          description: `Speed multiplier x${speedMultiplier} applied`,
+          status: 'success',
+          detail: `${validation.score} -> ${adjustedScore}`,
+        });
+      }
 
       return {
-        challengeId: scenario.id,
-        domain: scenario.domain,
-        difficulty: scenario.difficulty,
-        title: scenario.title,
-        score: adjustedScore,
-        maxScore: validation.maxScore,
-        correct: validation.correct,
-        feedback: validation.feedback + speedNote,
-        latencyMs,
-        inputTokens,
-        outputTokens,
-        rawModelResponse: rawResponse,
-        parsedQuery: parsedContent,
-        error: null,
+        challengeId: scenario.id, domain: scenario.domain,
+        difficulty: scenario.difficulty, title: scenario.title,
+        score: adjustedScore, maxScore: validation.maxScore,
+        correct: validation.correct, feedback: validation.feedback + speedNote,
+        latencyMs, inputTokens, outputTokens,
+        rawModelResponse: rawResponse, parsedQuery: parsedContent,
+        error: null, evalSteps: steps,
       };
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-      return {
-        challengeId: scenario.id,
-        domain: scenario.domain,
-        difficulty: scenario.difficulty,
-        title: scenario.title,
-        score: 0,
-        maxScore: scenario.maxScore,
-        correct: false,
-        feedback: `Error: ${error}`,
-        latencyMs,
-        inputTokens,
-        outputTokens,
-        rawModelResponse: rawResponse,
-        parsedQuery: null,
+      steps.push({
+        name: 'error',
+        description: 'Unexpected error during evaluation',
+        status: 'failure',
         error,
+      });
+      return {
+        challengeId: scenario.id, domain: scenario.domain,
+        difficulty: scenario.difficulty, title: scenario.title,
+        score: 0, maxScore: scenario.maxScore, correct: false,
+        feedback: `Error: ${error}`,
+        latencyMs, inputTokens, outputTokens,
+        rawModelResponse: rawResponse, parsedQuery: null,
+        error, evalSteps: steps,
       };
     }
   }
@@ -438,6 +500,7 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
     latencyMs: number,
     inputTokens: number,
     outputTokens: number,
+    evalSteps?: EvalStep[],
   ): ChallengeScore {
     return {
       challengeId: scenario.id,
@@ -454,11 +517,15 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
       rawModelResponse: rawResponse,
       parsedQuery: null,
       error,
+      evalSteps,
     };
   }
 
   private async runChallenge(challenge: Challenge): Promise<ChallengeScore> {
-    // Set up the index with seed data
+    const steps: EvalStep[] = [];
+
+    // Step 1: Setup
+    const setupStart = Date.now();
     await this.backend.reset();
     if (challenge.mapping) {
       await this.backend.createIndex(challenge.indexName, challenge.mapping);
@@ -477,6 +544,12 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
     if (challenge.pipeline) {
       await this.backend.putPipeline(`${challenge.id}-pipeline`, challenge.pipeline);
     }
+    steps.push({
+      name: 'setup',
+      description: `Index "${challenge.indexName}" created with ${challenge.seedData.length} docs${challenge.pipeline ? ' + pipeline' : ''}`,
+      status: 'success',
+      durationMs: Date.now() - setupStart,
+    });
 
     let rawResponse = '';
     let parsedQuery: Record<string, unknown> | null = null;
@@ -486,64 +559,123 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
     let error: string | null = null;
 
     try {
-      // Multi-turn: first let the model explore, then ask for the query
+      // Step 2: Prompt + Model call
       if (challenge.multiTurn && challenge.discoveryPrompt) {
+        // Discovery call
+        const discStart = Date.now();
         const discoveryResponse = await this.model.complete(
           challenge.discoveryPrompt + `\n\nINDEX: ${challenge.indexName}\n\nMAPPING:\n${JSON.stringify(challenge.mapping ?? {}, null, 2)}\n\nSAMPLE DOCUMENTS (first 2):\n${challenge.seedData.slice(0, 2).map((d) => JSON.stringify(d._source, null, 2)).join('\n')}`,
         );
         latencyMs += discoveryResponse.latencyMs;
         inputTokens += discoveryResponse.inputTokens ?? 0;
         outputTokens += discoveryResponse.outputTokens ?? 0;
+        steps.push({
+          name: 'discovery_call',
+          description: `Multi-turn discovery: model analyzed schema and sample data`,
+          status: 'success',
+          durationMs: discoveryResponse.latencyMs,
+          detail: `${discoveryResponse.inputTokens ?? 0} in / ${discoveryResponse.outputTokens ?? 0} out tokens`,
+        });
 
-        // Now build the actual query prompt with the discovery context
+        // Query call with discovery context
         const queryPrompt = this.buildPrompt(challenge) +
           `\n\nYour earlier analysis of the data:\n${discoveryResponse.content}\n\nNow respond with ONLY the JSON query body:`;
-
         const response = await this.model.complete(queryPrompt);
         rawResponse = response.content;
         latencyMs += response.latencyMs;
         inputTokens += response.inputTokens ?? 0;
         outputTokens += response.outputTokens ?? 0;
+        steps.push({
+          name: 'model_call',
+          description: `Model generated query using discovery context`,
+          status: 'success',
+          durationMs: response.latencyMs,
+          detail: `${response.inputTokens ?? 0} in / ${response.outputTokens ?? 0} out tokens`,
+        });
       } else {
-        // Standard single-turn
         const prompt = this.buildPrompt(challenge);
+        steps.push({
+          name: 'prompt',
+          description: `Prompt built: ${challenge.title} (${challenge.domain} / ${challenge.difficulty})`,
+          status: 'success',
+          detail: `${prompt.length} chars`,
+        });
+
+        const callStart = Date.now();
         const response = await this.model.complete(prompt);
         rawResponse = response.content;
         latencyMs = response.latencyMs;
         inputTokens = response.inputTokens ?? 0;
         outputTokens = response.outputTokens ?? 0;
+        steps.push({
+          name: 'model_call',
+          description: `Model responded in ${response.latencyMs}ms`,
+          status: 'success',
+          durationMs: response.latencyMs,
+          detail: `${inputTokens} in / ${outputTokens} out tokens`,
+        });
       }
 
-      // Parse the query from model response
+      // Step 3: Parse
       parsedQuery = this.extractJson(rawResponse);
 
       if (!parsedQuery) {
+        steps.push({
+          name: 'parse',
+          description: 'Failed to extract valid JSON query from model response',
+          status: 'failure',
+          error: 'Could not parse JSON from response',
+          detail: rawResponse.slice(0, 200),
+        });
         return {
-          challengeId: challenge.id,
-          domain: challenge.domain,
-          difficulty: challenge.difficulty,
-          title: challenge.title,
-          score: 0,
-          maxScore: challenge.maxScore,
-          correct: false,
+          challengeId: challenge.id, domain: challenge.domain,
+          difficulty: challenge.difficulty, title: challenge.title,
+          score: 0, maxScore: challenge.maxScore, correct: false,
           feedback: 'Failed to parse JSON query from model response.',
-          latencyMs,
-          inputTokens,
-          outputTokens,
-          rawModelResponse: rawResponse,
-          parsedQuery: null,
-          error: 'JSON parse error',
+          latencyMs, inputTokens, outputTokens,
+          rawModelResponse: rawResponse, parsedQuery: null,
+          error: 'JSON parse error', evalSteps: steps,
         };
       }
 
-      // Execute the query and validate
+      steps.push({
+        name: 'parse',
+        description: 'JSON query extracted from model response',
+        status: 'success',
+        detail: JSON.stringify(parsedQuery).slice(0, 200),
+      });
+
+      // Step 4: Execute
+      const execStart = Date.now();
       const searchResponse: SearchResponse = await this.backend.search(
         challenge.indexName,
         parsedQuery,
       );
-      const validation = await challenge.validate(searchResponse, this.backend);
+      const execMs = Date.now() - execStart;
+      const hitCount = searchResponse.hits?.hits?.length ?? 0;
+      steps.push({
+        name: 'execute',
+        description: `Query executed against "${challenge.indexName}"`,
+        status: 'success',
+        durationMs: execMs,
+        detail: `${hitCount} hits returned`,
+      });
 
-      // Apply speed multiplier to the score
+      // Step 5: Validate
+      const valStart = Date.now();
+      const validation = await challenge.validate(searchResponse, this.backend);
+      steps.push({
+        name: 'validate',
+        description: validation.correct
+          ? `Validation passed: ${validation.score}/${validation.maxScore}`
+          : `Validation failed: ${validation.score}/${validation.maxScore}`,
+        status: validation.correct ? 'success' : 'failure',
+        durationMs: Date.now() - valStart,
+        detail: validation.feedback,
+        error: validation.correct ? undefined : validation.feedback,
+      });
+
+      // Step 6: Speed adjustment
       const speedMultiplier = this.getSpeedMultiplier(latencyMs);
       const adjustedScore = Math.min(
         validation.maxScore,
@@ -554,40 +686,41 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
         : speedMultiplier < 1
           ? ` Speed penalty: x${speedMultiplier} (${latencyMs}ms).`
           : '';
+      if (speedMultiplier !== 1) {
+        steps.push({
+          name: 'speed_adjust',
+          description: `Speed multiplier x${speedMultiplier} applied (${latencyMs}ms)`,
+          status: 'success',
+          detail: `${validation.score} -> ${adjustedScore}`,
+        });
+      }
 
       return {
-        challengeId: challenge.id,
-        domain: challenge.domain,
-        difficulty: challenge.difficulty,
-        title: challenge.title,
-        score: adjustedScore,
-        maxScore: validation.maxScore,
+        challengeId: challenge.id, domain: challenge.domain,
+        difficulty: challenge.difficulty, title: challenge.title,
+        score: adjustedScore, maxScore: validation.maxScore,
         correct: validation.correct,
         feedback: validation.feedback + speedNote,
-        latencyMs,
-        inputTokens,
-        outputTokens,
-        rawModelResponse: rawResponse,
-        parsedQuery,
-        error: null,
+        latencyMs, inputTokens, outputTokens,
+        rawModelResponse: rawResponse, parsedQuery,
+        error: null, evalSteps: steps,
       };
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-      return {
-        challengeId: challenge.id,
-        domain: challenge.domain,
-        difficulty: challenge.difficulty,
-        title: challenge.title,
-        score: 0,
-        maxScore: challenge.maxScore,
-        correct: false,
-        feedback: `Error: ${error}`,
-        latencyMs,
-        inputTokens,
-        outputTokens,
-        rawModelResponse: rawResponse,
-        parsedQuery,
+      steps.push({
+        name: 'error',
+        description: `Unexpected error during evaluation`,
+        status: 'failure',
         error,
+      });
+      return {
+        challengeId: challenge.id, domain: challenge.domain,
+        difficulty: challenge.difficulty, title: challenge.title,
+        score: 0, maxScore: challenge.maxScore, correct: false,
+        feedback: `Error: ${error}`,
+        latencyMs, inputTokens, outputTokens,
+        rawModelResponse: rawResponse, parsedQuery,
+        error, evalSteps: steps,
       };
     }
   }
