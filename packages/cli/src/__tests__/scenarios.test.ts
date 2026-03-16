@@ -296,16 +296,21 @@ describe('Scenario Registry', () => {
       expect(scenario.hints.length).toBeGreaterThan(0);
       expect(scenario.indexName).toBeDefined();
       expect(scenario.seedData.length).toBeGreaterThan(0);
-      expect(scenario.responseFormat).toBe('esql');
+      expect(['esql', 'query-dsl', 'api-call']).toContain(scenario.responseFormat);
       expect(scenario.validate).toBeInstanceOf(Function);
       expect(scenario.maxScore).toBe(100);
     }
   });
 
-  it('should have seed data with substantial volume', () => {
+  it('should have seed data with substantial volume for esql scenarios', () => {
     for (const scenario of getAllScenarios()) {
-      // All scenarios should use generators (hundreds of docs)
-      expect(scenario.seedData.length).toBeGreaterThan(100);
+      if (scenario.responseFormat === 'esql') {
+        // ES|QL scenarios should use generators (hundreds of docs)
+        expect(scenario.seedData.length).toBeGreaterThan(100);
+      } else {
+        // API-call scenarios use minimal placeholder data
+        expect(scenario.seedData.length).toBeGreaterThan(0);
+      }
     }
   });
 

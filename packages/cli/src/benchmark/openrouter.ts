@@ -6,6 +6,7 @@ import * as readline from 'readline';
 export interface OpenRouterModel {
   id: string;
   name: string;
+  created?: number;  // unix timestamp
   pricing: {
     prompt: string;   // cost per token
     completion: string;
@@ -27,58 +28,90 @@ export async function fetchOpenRouterModels(): Promise<OpenRouterModel[]> {
   return data.data;
 }
 
-// --- Popular model presets (curated for benchmarking) ---
+// --- Providers we care about for benchmarking ---
 
+const BENCHMARK_PROVIDERS = new Set([
+  'anthropic', 'openai', 'google', 'meta-llama',
+  'deepseek', 'x-ai', 'qwen', 'mistralai',
+  'cohere', 'ai21', 'nvidia', 'microsoft',
+]);
+
+/**
+ * Build the popular models list dynamically from the OpenRouter catalog.
+ * For each provider, takes the N most recent models (by created timestamp).
+ * Falls back to a static list if the dynamic fetch fails.
+ */
+export function buildPopularList(
+  allModels: OpenRouterModel[],
+  maxPerProvider = 3,
+): string[] {
+  // Filter to benchmark-worthy providers, non-free, text-capable
+  const candidates = allModels.filter((m) => {
+    const provider = m.id.split('/')[0];
+    if (!BENCHMARK_PROVIDERS.has(provider)) return false;
+    if (m.id.includes(':free')) return false;
+    if (m.id.includes(':extended')) return false;
+    if (m.id.includes(':beta') && !m.id.includes('grok')) return false;
+    // Must have a prompt price (not free/zero)
+    const price = parseFloat(m.pricing.prompt);
+    if (isNaN(price) || price <= 0) return false;
+    return true;
+  });
+
+  // Group by provider, sort each group by created (newest first)
+  const byProvider = new Map<string, OpenRouterModel[]>();
+  for (const m of candidates) {
+    const provider = m.id.split('/')[0];
+    if (!byProvider.has(provider)) byProvider.set(provider, []);
+    byProvider.get(provider)!.push(m);
+  }
+
+  // Sort each provider's models by created desc (newest first)
+  for (const models of byProvider.values()) {
+    models.sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+  }
+
+  // Take top N per provider, ordered by provider importance
+  const providerOrder = [
+    'anthropic', 'openai', 'google', 'meta-llama',
+    'deepseek', 'x-ai', 'qwen', 'mistralai',
+    'cohere', 'ai21', 'nvidia', 'microsoft',
+  ];
+
+  const result: string[] = [];
+  for (const provider of providerOrder) {
+    const models = byProvider.get(provider);
+    if (!models) continue;
+    for (const m of models.slice(0, maxPerProvider)) {
+      result.push(m.id);
+    }
+  }
+
+  return result;
+}
+
+/** Static fallback if API fetch fails. */
 export function getPopularModels(): string[] {
   return [
-    // Anthropic
     'anthropic/claude-opus-4.6',
     'anthropic/claude-sonnet-4.6',
-    'anthropic/claude-opus-4.5',
-    'anthropic/claude-sonnet-4.5',
     'anthropic/claude-haiku-4.5',
-    'anthropic/claude-opus-4.1',
-    'anthropic/claude-opus-4',
-    'anthropic/claude-sonnet-4',
-    'anthropic/claude-3.7-sonnet',
-    'anthropic/claude-3.5-sonnet',
-    'anthropic/claude-3.5-haiku',
-    // OpenAI
     'openai/o3',
-    'openai/o3-mini',
-    'openai/o4-mini',
     'openai/gpt-4.1',
     'openai/gpt-4.1-mini',
-    'openai/gpt-4.1-nano',
-    'openai/gpt-4o',
-    'openai/gpt-4o-mini',
-    // Google
     'google/gemini-2.5-pro',
-    'google/gemini-2.5-pro-preview',
     'google/gemini-2.0-flash-001',
-    // Meta
     'meta-llama/llama-4-maverick',
     'meta-llama/llama-4-scout',
-    'meta-llama/llama-3.3-70b-instruct',
-    // DeepSeek
-    'deepseek/deepseek-chat-v3-0324',
-    'deepseek/deepseek-r1',
     'deepseek/deepseek-r1-0528',
-    // xAI
+    'deepseek/deepseek-chat-v3-0324',
     'x-ai/grok-4',
     'x-ai/grok-3',
-    // Qwen
     'qwen/qwen3-235b-a22b',
     'qwen/qwen3-max',
-    'qwen/qwen-2.5-72b-instruct',
-    // Mistral
     'mistralai/mistral-large-2512',
-    'mistralai/mistral-large-2411',
     'mistralai/devstral-2512',
-    // Cohere
     'cohere/command-a',
-    // AI21
-    'ai21/jamba-large-1.7',
   ];
 }
 
@@ -187,27 +220,46 @@ export async function pickModels(apiKey?: string): Promise<string[]> {
   }
 
   const allModelIds = new Set(allModels.map((m) => m.id));
-  const popular = getPopularModels().filter((id) => allModelIds.has(id));
+
+  // Build dynamic popular list from live API data (newest per provider)
+  const popular = buildPopularList(allModels, 3);
+  // Fall back to static list if dynamic produces too few
+  const fallback = getPopularModels().filter((id) => allModelIds.has(id));
+  const displayList = popular.length >= 10 ? popular : fallback;
 
   const formatCost = (id: string): string => {
     const model = allModels.find((m) => m.id === id);
     return model ? `$${(parseFloat(model.pricing.prompt) * 1_000_000).toFixed(2)}/M tok` : '';
   };
 
-  // Group popular models by provider for clean display
+  const formatAge = (id: string): string => {
+    const model = allModels.find((m) => m.id === id);
+    if (!model?.created) return '';
+    const days = Math.floor((Date.now() / 1000 - model.created) / 86400);
+    if (days === 0) return 'today';
+    if (days === 1) return '1d ago';
+    if (days < 30) return `${days}d ago`;
+    if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+    return `${Math.floor(days / 365)}y ago`;
+  };
+
+  // Group by provider for clean display
   process.stderr.write(`\n${allModels.length} models available on OpenRouter.\n`);
-  process.stderr.write(`\nPopular models:\n\n`);
+  process.stderr.write(`\nLatest models by provider (newest first):\n\n`);
 
   let currentProvider = '';
-  for (let i = 0; i < popular.length; i++) {
-    const id = popular[i];
+  for (let i = 0; i < displayList.length; i++) {
+    const id = displayList[i];
     const provider = id.split('/')[0];
     if (provider !== currentProvider) {
       if (currentProvider) process.stderr.write('\n');
       currentProvider = provider;
     }
+    const age = formatAge(id);
+    const cost = formatCost(id);
+    const agePad = age ? `  ${age}` : '';
     process.stderr.write(
-      `  ${String(i + 1).padStart(3)}. ${id.padEnd(45)} ${formatCost(id)}\n`,
+      `  ${String(i + 1).padStart(3)}. ${id.padEnd(45)} ${cost.padEnd(15)}${agePad}\n`,
     );
   }
 
@@ -215,7 +267,8 @@ export async function pickModels(apiKey?: string): Promise<string[]> {
   process.stderr.write(`  Numbers:    1,3,5          (pick from list above)\n`);
   process.stderr.write(`  Model IDs:  openai/gpt-4o  (any OpenRouter model ID)\n`);
   process.stderr.write(`  Search:     opus           (fuzzy match across all ${allModels.length} models)\n`);
-  process.stderr.write(`  All:        all            (benchmark all popular models)\n\n`);
+  process.stderr.write(`  Provider:   anthropic       (latest 5 from that provider)\n`);
+  process.stderr.write(`  All:        all            (benchmark all listed models)\n\n`);
 
   const input = await ask('  Models to benchmark: ');
   rl.close();
@@ -246,27 +299,55 @@ export async function pickModels(apiKey?: string): Promise<string[]> {
         process.stderr.write(`  Warning: model "${part}" not found on OpenRouter, skipping.\n`);
       }
     } else {
-      // Fuzzy match: find all models matching the search term
-      const matches = allModels.filter(
-        (m) => m.id.toLowerCase().includes(part.toLowerCase()),
-      );
-      if (matches.length === 1) {
-        selected.push(matches[0].id);
-      } else if (matches.length > 1 && matches.length <= 15) {
-        process.stderr.write(`\n  Multiple matches for "${part}":\n`);
-        for (let j = 0; j < matches.length; j++) {
-          process.stderr.write(`    ${String(j + 1).padStart(3)}. ${matches[j].id.padEnd(45)} ${formatCost(matches[j].id)}\n`);
+      // Check if it's a provider name (e.g., "anthropic", "openai")
+      const isProvider = BENCHMARK_PROVIDERS.has(part.toLowerCase()) ||
+        allModels.some((m) => m.id.split('/')[0].toLowerCase() === part.toLowerCase());
+
+      if (isProvider) {
+        // Show latest 5 from that provider
+        const providerModels = allModels
+          .filter((m) => m.id.split('/')[0].toLowerCase() === part.toLowerCase())
+          .filter((m) => !m.id.includes(':free') && parseFloat(m.pricing.prompt) > 0)
+          .sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
+          .slice(0, 5);
+        if (providerModels.length > 0) {
+          process.stderr.write(`\n  Latest from ${part}:\n`);
+          for (const m of providerModels) {
+            process.stderr.write(`    + ${m.id.padEnd(45)} ${formatCost(m.id)}\n`);
+            selected.push(m.id);
+          }
+        } else {
+          process.stderr.write(`  No models found for provider "${part}".\n`);
         }
-        // Pick all matches
-        for (const m of matches) {
-          selected.push(m.id);
-        }
-        process.stderr.write(`  (Added all ${matches.length} matches. Remove unwanted ones from the list.)\n`);
-      } else if (matches.length > 15) {
-        process.stderr.write(`  "${part}" matched ${matches.length} models. Be more specific.\n`);
-        process.stderr.write(`  Top 5: ${matches.slice(0, 5).map((m) => m.id).join(', ')}\n`);
       } else {
-        process.stderr.write(`  Warning: no match for "${part}", skipping.\n`);
+        // Fuzzy match: find all models matching the search term
+        const matches = allModels.filter(
+          (m) => m.id.toLowerCase().includes(part.toLowerCase()),
+        );
+        if (matches.length === 1) {
+          selected.push(matches[0].id);
+        } else if (matches.length > 1 && matches.length <= 15) {
+          // Sort by newest first
+          matches.sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+          process.stderr.write(`\n  Multiple matches for "${part}" (newest first):\n`);
+          for (let j = 0; j < matches.length; j++) {
+            process.stderr.write(`    ${String(j + 1).padStart(3)}. ${matches[j].id.padEnd(45)} ${formatCost(matches[j].id)}\n`);
+          }
+          for (const m of matches) {
+            selected.push(m.id);
+          }
+          process.stderr.write(`  (Added all ${matches.length} matches.)\n`);
+        } else if (matches.length > 15) {
+          // Sort and show top 10
+          matches.sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+          process.stderr.write(`  "${part}" matched ${matches.length} models. Showing newest 10:\n`);
+          for (const m of matches.slice(0, 10)) {
+            process.stderr.write(`    ${m.id.padEnd(45)} ${formatCost(m.id)}\n`);
+          }
+          process.stderr.write(`  Be more specific, or type a model ID directly.\n`);
+        } else {
+          process.stderr.write(`  Warning: no match for "${part}", skipping.\n`);
+        }
       }
     }
   }
