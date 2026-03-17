@@ -24,6 +24,30 @@ interface ScenarioLeaderboardEntry {
   skillUplift?: number;
 }
 
+interface EfficiencyMetrics {
+  modelId: string;
+  modelName: string;
+  provider: string;
+  baseline: { percentage: number; avgLatencyMs: number; totalModelCallMs: number; totalSteps: number; totalInputTokens: number; totalOutputTokens: number };
+  skills: { percentage: number; avgLatencyMs: number; totalModelCallMs: number; totalSteps: number; totalInputTokens: number; totalOutputTokens: number };
+  delta: { scoreUplift: number; latencyDelta: number; latencyDeltaPct: number; modelCallDelta: number; modelCallDeltaPct: number; stepsDelta: number; inputTokenDelta: number; outputTokenDelta: number };
+  perChallenge: Array<{ challengeId: string; title: string; baselineMs: number; skillsMs: number; deltaMs: number; baselineSteps: number; skillsSteps: number; baselinePassed: boolean; skillsPassed: boolean }>;
+}
+
+function DeltaBadge({ value, suffix = '', invert = false }: { value: number; suffix?: string; invert?: boolean }) {
+  // invert: true means negative is good (e.g., less latency = good)
+  const isGood = invert ? value < 0 : value > 0;
+  const isBad = invert ? value > 0 : value < 0;
+  const cls = isGood ? 'skill-uplift skill-uplift-positive'
+    : isBad ? 'skill-uplift skill-uplift-negative'
+    : 'skill-uplift skill-uplift-neutral';
+  return (
+    <span className={cls}>
+      {value > 0 ? '+' : ''}{value}{suffix}
+    </span>
+  );
+}
+
 const DOMAIN_LABELS: Record<string, string> = {
   'full-text-search': 'Search',
   'ingest-indexing': 'Ingest',
@@ -55,6 +79,7 @@ export default function ScenariosLeaderboardPage() {
   const [loading, setLoading] = useState(true);
   const [skillFilter, setSkillFilter] = useState<SkillFilter>('all');
   const [search, setSearch] = useState('');
+  const [efficiency, setEfficiency] = useState<EfficiencyMetrics[]>([]);
 
   useEffect(() => {
     fetch('/api/leaderboard?type=scenarios')
@@ -64,6 +89,10 @@ export default function ScenariosLeaderboardPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+    fetch('/api/leaderboard?type=efficiency-skills')
+      .then((r) => r.json())
+      .then((data) => setEfficiency(data ?? []))
+      .catch(() => {});
   }, []);
 
   const filtered = entries.filter((e) => {
@@ -335,6 +364,130 @@ export default function ScenariosLeaderboardPage() {
             </table>
           </div>
         </>
+      )}
+
+      {/* Skills Efficiency Analysis */}
+      {efficiency.length > 0 && (
+        <div style={{ marginTop: '3rem' }}>
+          <h2 style={{ fontSize: '1.35rem', marginBottom: '0.5rem' }}>Skills Efficiency Analysis</h2>
+          <p className="subtitle" style={{ marginBottom: '2rem' }}>
+            Do Elastic Agent Skills help models work faster and smarter?
+          </p>
+
+          {/* Summary cards */}
+          <div className="model-grid" style={{ marginBottom: '2rem' }}>
+            {efficiency.map((m) => (
+              <div key={m.modelId} className="model-card" style={{ cursor: 'default' }}>
+                <div className="model-card-header">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="model-card-name">{m.modelName}</div>
+                    <span className="provider-tag">{m.provider}</span>
+                  </div>
+                  <DeltaBadge value={m.delta.scoreUplift} suffix="% score" />
+                </div>
+
+                <div className="model-card-stats" style={{ flexWrap: 'wrap' }}>
+                  <div className="model-card-stat">
+                    <span className="model-card-stat-label">Model Call Time</span>
+                    <DeltaBadge value={m.delta.modelCallDeltaPct} suffix="%" invert />
+                  </div>
+                  <div className="model-card-stat">
+                    <span className="model-card-stat-label">Avg Latency</span>
+                    <DeltaBadge value={m.delta.latencyDeltaPct} suffix="%" invert />
+                  </div>
+                  <div className="model-card-stat">
+                    <span className="model-card-stat-label">Eval Steps</span>
+                    <DeltaBadge value={m.delta.stepsDelta} invert />
+                  </div>
+                  <div className="model-card-stat">
+                    <span className="model-card-stat-label">Output Tokens</span>
+                    <DeltaBadge value={m.delta.outputTokenDelta} invert />
+                  </div>
+                </div>
+
+                {/* Mini per-challenge bar chart */}
+                <div style={{ marginTop: '0.75rem' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#737373', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Per-challenge model call time (ms)
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    {m.perChallenge.slice(0, 8).map((pc) => {
+                      const maxMs = Math.max(pc.baselineMs, pc.skillsMs, 1);
+                      const faster = pc.deltaMs < 0;
+                      return (
+                        <div key={pc.challengeId} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.7rem' }}>
+                          <span style={{ width: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#737373' }}>
+                            {pc.title.split(' ').slice(0, 3).join(' ')}
+                          </span>
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            <div style={{ height: 3, borderRadius: 2, background: '#00bfae', width: `${(pc.baselineMs / maxMs) * 100}%`, opacity: 0.6 }} />
+                            <div style={{ height: 3, borderRadius: 2, background: '#a855f7', width: `${(pc.skillsMs / maxMs) * 100}%`, opacity: 0.6 }} />
+                          </div>
+                          <span style={{ width: 55, textAlign: 'right', fontFamily: 'var(--font-mono)', color: faster ? '#22c55e' : pc.deltaMs > 0 ? '#ef4444' : '#737373' }}>
+                            {pc.deltaMs > 0 ? '+' : ''}{pc.deltaMs}ms
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.65rem', color: '#525252' }}>
+                    <span><span style={{ display: 'inline-block', width: 8, height: 3, background: '#00bfae', borderRadius: 1, marginRight: 4 }} />Baseline</span>
+                    <span><span style={{ display: 'inline-block', width: 8, height: 3, background: '#a855f7', borderRadius: 1, marginRight: 4 }} />With Skills</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Detailed table */}
+          <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Detailed Comparison</h3>
+          <table className="lb-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Score Uplift</th>
+                <th>Model Call Time</th>
+                <th>Eval Steps</th>
+                <th>Input Tokens</th>
+                <th>Output Tokens</th>
+              </tr>
+            </thead>
+            <tbody>
+              {efficiency.map((m) => (
+                <tr key={m.modelId}>
+                  <td className="model-col">
+                    {m.modelName}
+                    <span className="provider-tag">{m.provider}</span>
+                  </td>
+                  <td><DeltaBadge value={m.delta.scoreUplift} suffix="%" /></td>
+                  <td>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
+                      {Math.round(m.baseline.totalModelCallMs / 1000)}s → {Math.round(m.skills.totalModelCallMs / 1000)}s
+                    </div>
+                    <DeltaBadge value={m.delta.modelCallDeltaPct} suffix="%" invert />
+                  </td>
+                  <td>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
+                      {m.baseline.totalSteps} → {m.skills.totalSteps}
+                    </span>
+                    {' '}<DeltaBadge value={m.delta.stepsDelta} invert />
+                  </td>
+                  <td>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
+                      {(m.baseline.totalInputTokens / 1000).toFixed(1)}k → {(m.skills.totalInputTokens / 1000).toFixed(1)}k
+                    </span>
+                  </td>
+                  <td>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
+                      {(m.baseline.totalOutputTokens / 1000).toFixed(1)}k → {(m.skills.totalOutputTokens / 1000).toFixed(1)}k
+                    </span>
+                    {' '}<DeltaBadge value={m.delta.outputTokenDelta} invert />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

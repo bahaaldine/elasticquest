@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getLeaderboard, getScenarioLeaderboard } from '@/lib/store';
+import { getLeaderboard, getScenarioLeaderboard, getSkillEfficiency } from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +9,11 @@ export async function GET(request: NextRequest) {
   if (type === 'scenarios') {
     const scenarios = await getScenarioLeaderboard();
     return NextResponse.json(scenarios);
+  }
+
+  if (type === 'efficiency-skills') {
+    const efficiency = await getSkillEfficiency();
+    return NextResponse.json(efficiency);
   }
 
   const leaderboard = await getLeaderboard();

@@ -263,6 +263,155 @@ export async function getChallengePassRates(): Promise<Record<string, { passed: 
 /**
  * Get the best submission for a model (the one shown on leaderboard).
  */
+/** Efficiency metrics comparing baseline vs skills for a model. */
+export interface SkillEfficiencyMetrics {
+  modelId: string;
+  modelName: string;
+  provider: string;
+  baseline: {
+    percentage: number;
+    avgLatencyMs: number;
+    totalModelCallMs: number;
+    totalSteps: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+  };
+  skills: {
+    percentage: number;
+    avgLatencyMs: number;
+    totalModelCallMs: number;
+    totalSteps: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+  };
+  delta: {
+    scoreUplift: number;
+    latencyDelta: number;
+    latencyDeltaPct: number;
+    modelCallDelta: number;
+    modelCallDeltaPct: number;
+    stepsDelta: number;
+    inputTokenDelta: number;
+    outputTokenDelta: number;
+  };
+  perChallenge: Array<{
+    challengeId: string;
+    title: string;
+    baselineMs: number;
+    skillsMs: number;
+    deltaMs: number;
+    baselineSteps: number;
+    skillsSteps: number;
+    baselinePassed: boolean;
+    skillsPassed: boolean;
+  }>;
+}
+
+export async function getSkillEfficiency(): Promise<SkillEfficiencyMetrics[]> {
+  const db = getDb();
+  const snapshot = await db.collection(COLLECTION).get();
+  const scores: ScoreSubmission[] = [];
+  snapshot.forEach((doc) => scores.push(doc.data() as ScoreSubmission));
+
+  // Group by model, find baseline and skills pairs
+  const byModel = new Map<string, { baseline?: ScoreSubmission; skills?: ScoreSubmission }>();
+  for (const s of scores) {
+    if (s.skillsEnabled === undefined && s.backendType === undefined) continue;
+    const existing = byModel.get(s.modelId) ?? {};
+    if (s.skillsEnabled) {
+      if (!existing.skills || s.percentage > existing.skills.percentage) existing.skills = s;
+    } else {
+      if (!existing.baseline || s.percentage > existing.baseline.percentage) existing.baseline = s;
+    }
+    byModel.set(s.modelId, existing);
+  }
+
+  const results: SkillEfficiencyMetrics[] = [];
+
+  for (const [modelId, { baseline, skills }] of byModel) {
+    if (!baseline || !skills) continue;
+    if (!baseline.challengeScores || !skills.challengeScores) continue;
+
+    // Aggregate step metrics
+    let baseTotalModelMs = 0, skillsTotalModelMs = 0;
+    let baseTotalSteps = 0, skillsTotalSteps = 0;
+
+    for (const cs of baseline.challengeScores) {
+      if (!cs.evalSteps) continue;
+      baseTotalSteps += cs.evalSteps.length;
+      for (const step of cs.evalSteps) {
+        if (step.name === 'model_call' && step.durationMs) baseTotalModelMs += step.durationMs;
+      }
+    }
+    for (const cs of skills.challengeScores) {
+      if (!cs.evalSteps) continue;
+      skillsTotalSteps += cs.evalSteps.length;
+      for (const step of cs.evalSteps) {
+        if (step.name === 'model_call' && step.durationMs) skillsTotalModelMs += step.durationMs;
+      }
+    }
+
+    // Per-challenge comparison
+    const perChallenge: SkillEfficiencyMetrics['perChallenge'] = [];
+    for (const bc of baseline.challengeScores) {
+      const sc = skills.challengeScores.find((s) => s.challengeId === bc.challengeId);
+      if (!sc) continue;
+      const bModelStep = bc.evalSteps?.find((s) => s.name === 'model_call');
+      const sModelStep = sc.evalSteps?.find((s) => s.name === 'model_call');
+      perChallenge.push({
+        challengeId: bc.challengeId,
+        title: bc.title,
+        baselineMs: bModelStep?.durationMs ?? bc.latencyMs,
+        skillsMs: sModelStep?.durationMs ?? sc.latencyMs,
+        deltaMs: (sModelStep?.durationMs ?? sc.latencyMs) - (bModelStep?.durationMs ?? bc.latencyMs),
+        baselineSteps: bc.evalSteps?.length ?? 0,
+        skillsSteps: sc.evalSteps?.length ?? 0,
+        baselinePassed: bc.correct,
+        skillsPassed: sc.correct,
+      });
+    }
+
+    const baseAvgLat = baseline.avgLatencyMs;
+    const skillsAvgLat = skills.avgLatencyMs;
+
+    results.push({
+      modelId,
+      modelName: baseline.modelName,
+      provider: baseline.provider,
+      baseline: {
+        percentage: baseline.percentage,
+        avgLatencyMs: baseAvgLat,
+        totalModelCallMs: baseTotalModelMs,
+        totalSteps: baseTotalSteps,
+        totalInputTokens: baseline.totalInputTokens,
+        totalOutputTokens: baseline.totalOutputTokens,
+      },
+      skills: {
+        percentage: skills.percentage,
+        avgLatencyMs: skillsAvgLat,
+        totalModelCallMs: skillsTotalModelMs,
+        totalSteps: skillsTotalSteps,
+        totalInputTokens: skills.totalInputTokens,
+        totalOutputTokens: skills.totalOutputTokens,
+      },
+      delta: {
+        scoreUplift: skills.percentage - baseline.percentage,
+        latencyDelta: skillsAvgLat - baseAvgLat,
+        latencyDeltaPct: baseAvgLat > 0 ? Math.round(((skillsAvgLat - baseAvgLat) / baseAvgLat) * 100) : 0,
+        modelCallDelta: skillsTotalModelMs - baseTotalModelMs,
+        modelCallDeltaPct: baseTotalModelMs > 0 ? Math.round(((skillsTotalModelMs - baseTotalModelMs) / baseTotalModelMs) * 100) : 0,
+        stepsDelta: skillsTotalSteps - baseTotalSteps,
+        inputTokenDelta: skills.totalInputTokens - baseline.totalInputTokens,
+        outputTokenDelta: skills.totalOutputTokens - baseline.totalOutputTokens,
+      },
+      perChallenge,
+    });
+  }
+
+  results.sort((a, b) => b.delta.scoreUplift - a.delta.scoreUplift);
+  return results;
+}
+
 export async function getBestModelScore(modelId: string): Promise<ScoreSubmission | null> {
   const scores = await getModelScores(modelId);
   if (scores.length === 0) return null;
