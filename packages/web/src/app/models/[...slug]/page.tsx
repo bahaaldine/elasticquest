@@ -5,7 +5,7 @@ import { RadarChart } from '@/components/radar-chart';
 import { DifficultyCurve } from '@/components/difficulty-curve';
 import { computeBadges } from '@/components/badges-logic';
 import { BadgeDisplay } from '@/components/badges';
-import { EvalProcess } from '@/components/eval-process';
+import { ChallengeRow } from '@/components/eval-process';
 
 export const dynamic = 'force-dynamic';
 
@@ -197,18 +197,13 @@ export default async function ModelCardPage({
             </thead>
             <tbody>
               {failedChallenges.map((c) => (
-                <tr key={c.challengeId}>
+                <ChallengeRow key={c.challengeId} challenge={c} colCount={5}>
                   <td style={{ color: '#ef4444' }}>&#10007;</td>
-                   <td>
-                     <div style={{ fontWeight: 600 }}>{c.title}</div>
-                     {c.evalSteps && c.evalSteps.length > 0 && (
-                       <EvalProcess steps={c.evalSteps} challengeId={c.challengeId} />
-                     )}
-                   </td>
-                   <td><span style={{ fontSize: '0.75rem', color: DIFF_COLORS[c.difficulty], fontWeight: 600 }}>{c.difficulty}</span></td>
-                   <td><ScoreBar score={c.score} maxScore={c.maxScore} /></td>
-                   <td style={{ fontSize: '0.8rem', color: '#ef4444', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.feedback}</td>
-                </tr>
+                  <td style={{ fontWeight: 600 }}>{c.title}</td>
+                  <td><span style={{ fontSize: '0.75rem', color: DIFF_COLORS[c.difficulty], fontWeight: 600 }}>{c.difficulty}</span></td>
+                  <td><ScoreBar score={c.score} maxScore={c.maxScore} /></td>
+                  <td style={{ fontSize: '0.8rem', color: '#ef4444', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.feedback}</td>
+                </ChallengeRow>
               ))}
             </tbody>
           </table>
@@ -226,20 +221,17 @@ export default async function ModelCardPage({
                 <thead><tr><th style={{ width: 30 }}></th><th>Challenge</th><th>Difficulty</th><th>Score</th><th>Latency</th><th>Feedback</th></tr></thead>
                 <tbody>
                   {domainChallenges.map((c) => (
-                    <tr key={c.challengeId}>
+                    <ChallengeRow key={c.challengeId} challenge={c} colCount={6}>
                       <td><span style={{ fontSize: '1.1rem' }}>{c.correct ? '\u2713' : '\u2717'}</span></td>
                       <td>
                         <div style={{ fontWeight: 600 }}>{c.title}</div>
                         <div style={{ fontSize: '0.8rem', color: '#737373' }}>{c.challengeId}</div>
-                        {c.evalSteps && c.evalSteps.length > 0 && (
-                          <EvalProcess steps={c.evalSteps} challengeId={c.challengeId} />
-                        )}
                       </td>
                       <td><span style={{ fontSize: '0.75rem', fontWeight: 600, color: DIFF_COLORS[c.difficulty] ?? '#737373' }}>{c.difficulty}</span></td>
                       <td><ScoreBar score={c.score} maxScore={c.maxScore} /></td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#737373' }}>{c.latencyMs}ms</td>
                       <td style={{ maxWidth: 300, fontSize: '0.8rem', color: c.correct ? '#737373' : '#ef4444', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.feedback}</td>
-                    </tr>
+                    </ChallengeRow>
                   ))}
                 </tbody>
               </table>

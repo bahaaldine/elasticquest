@@ -824,6 +824,13 @@ body {
   gap: 0;
   position: relative;
   padding-left: 1.5rem;
+  max-width: 800px;
+}
+
+/* Remove top border on the expansion row */
+.lb-table tr + tr td[colspan] {
+  border-top: none;
+  padding-top: 0;
 }
 
 .eval-process::before {
@@ -916,9 +923,9 @@ body {
   color: var(--text-muted);
   font-family: var(--font-mono);
   margin-top: 0.2rem;
-  word-break: break-all;
-  max-height: 3.6em;
-  overflow: hidden;
+  word-break: break-word;
+  max-height: none;
+  line-height: 1.5;
 }
 
 .eval-step-error {
