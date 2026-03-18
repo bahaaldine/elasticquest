@@ -116,6 +116,38 @@ export interface BenchmarkResult {
   // Scenario-specific fields
   skillsEnabled?: boolean;   // whether skills were injected into prompts
   backendType?: 'simulated' | 'cloud' | 'start-local';
+
+  // Consistency measurement (multi-run)
+  runIndex?: number;         // which run this is (1-indexed)
+  totalRuns?: number;        // how many runs were configured
+  consistency?: ConsistencyMetrics;
+}
+
+/** Per-challenge consistency metrics across multiple runs. */
+export interface ConsistencyScore {
+  challengeId: string;
+  title: string;
+  scores: number[];          // score from each run
+  steps: number[];           // step count from each run
+  latencies: number[];       // model call latency from each run
+  passedRuns: number;        // how many runs passed
+  totalRuns: number;
+  scoreVariance: number;     // variance in scores (0 = perfectly consistent)
+  stepVariance: number;      // variance in step count
+  latencyVariance: number;   // variance in latency
+  isConsistent: boolean;     // same pass/fail result every run
+}
+
+/** Aggregate consistency metrics for the entire benchmark. */
+export interface ConsistencyMetrics {
+  totalRuns: number;
+  avgScoreVariance: number;          // mean variance across challenges
+  avgStepVariance: number;
+  avgLatencyVariance: number;
+  fullyConsistentChallenges: number; // same result every run
+  inconsistentChallenges: number;    // different results across runs
+  consistencyPercentage: number;     // % of challenges that are fully consistent
+  perChallenge: ConsistencyScore[];
 }
 
 export interface LeaderboardRow {

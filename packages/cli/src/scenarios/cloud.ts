@@ -61,7 +61,7 @@ export const cloudScenarios: Scenario[] = [
   {
     id: 'cloud-1-setup',
     skillId: 'cloud-setup',
-    domain: 'esql',
+    domain: 'cloud',
     difficulty: 'beginner',
     title: 'Cloud API Configuration',
     description:
@@ -132,7 +132,7 @@ export const cloudScenarios: Scenario[] = [
   {
     id: 'cloud-2-create-project',
     skillId: 'cloud-create-project',
-    domain: 'esql',
+    domain: 'cloud',
     difficulty: 'intermediate',
     title: 'Create a Serverless Project',
     description:
@@ -212,7 +212,7 @@ export const cloudScenarios: Scenario[] = [
   {
     id: 'cloud-3-manage-project',
     skillId: 'cloud-manage-project',
-    domain: 'esql',
+    domain: 'cloud',
     difficulty: 'intermediate',
     title: 'Update a Serverless Project',
     description:
@@ -286,7 +286,7 @@ export const cloudScenarios: Scenario[] = [
   {
     id: 'cloud-4-access-management',
     skillId: 'cloud-access-management',
-    domain: 'esql',
+    domain: 'cloud',
     difficulty: 'advanced',
     title: 'Invite a User to the Organization',
     description:
@@ -384,7 +384,7 @@ export const cloudScenarios: Scenario[] = [
   {
     id: 'cloud-5-network-security',
     skillId: 'cloud-network-security',
-    domain: 'esql',
+    domain: 'cloud',
     difficulty: 'advanced',
     title: 'Create an IP Filter Rule Set',
     description:

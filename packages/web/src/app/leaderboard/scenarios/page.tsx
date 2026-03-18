@@ -49,13 +49,18 @@ function DeltaBadge({ value, suffix = '', invert = false }: { value: number; suf
 }
 
 const DOMAIN_LABELS: Record<string, string> = {
+  // Legacy challenge domains
   'full-text-search': 'Search',
   'ingest-indexing': 'Ingest',
   aggregations: 'Aggs',
-  observability: 'Obs',
   'vector-search': 'Vector',
+  // Scenario domains
+  search: 'Search',
+  observability: 'Observability',
   security: 'Security',
-  esql: 'ES|QL',
+  kibana: 'Kibana',
+  cloud: 'Cloud',
+  'agent-builder': 'Agent Builder',
 };
 
 type SkillFilter = 'all' | 'with-skills' | 'baseline' | 'has-uplift';

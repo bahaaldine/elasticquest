@@ -6,6 +6,8 @@ import type {
   EvalStep,
   DomainScore,
   DifficultyScore,
+  ConsistencyMetrics,
+  ConsistencyScore,
 } from './types';
 import type {
   Challenge,
@@ -166,6 +168,121 @@ export class BenchmarkRunner {
     const result = await this.buildResult(challengeScores);
     result.skillsEnabled = this.config.skillsEnabled;
     return result;
+  }
+
+  /**
+   * Run scenarios multiple times to measure consistency.
+   * Returns the best result with consistency metrics attached.
+   */
+  async runScenariosWithConsistency(runs: number): Promise<BenchmarkResult> {
+    const allResults: BenchmarkResult[] = [];
+
+    for (let run = 1; run <= runs; run++) {
+      const label = this.config.skillsEnabled ? '[+skills]' : '[baseline]';
+      process.stderr.write(`\n  ─── Run ${run}/${runs} ${label} ───\n\n`);
+      const result = await this.runScenarios();
+      result.runIndex = run;
+      result.totalRuns = runs;
+      allResults.push(result);
+    }
+
+    // Compute consistency metrics across runs
+    const consistency = this.computeConsistency(allResults);
+
+    // Use the best result as the primary
+    const best = allResults.reduce((a, b) =>
+      a.percentage > b.percentage ? a : b,
+    );
+    best.consistency = consistency;
+    best.totalRuns = runs;
+
+    // Print consistency summary
+    process.stderr.write(`\n${'─'.repeat(50)}\n`);
+    process.stderr.write(`  Consistency (${runs} runs):\n`);
+    process.stderr.write(`  Fully consistent: ${consistency.fullyConsistentChallenges}/${consistency.perChallenge.length} challenges (${consistency.consistencyPercentage}%)\n`);
+    process.stderr.write(`  Avg score variance: ${consistency.avgScoreVariance.toFixed(1)}\n`);
+    process.stderr.write(`  Avg step variance: ${consistency.avgStepVariance.toFixed(1)}\n`);
+    process.stderr.write(`  Avg latency variance: ${consistency.avgLatencyVariance.toFixed(0)}ms\n`);
+
+    // Show inconsistent challenges
+    const inconsistent = consistency.perChallenge.filter((c) => !c.isConsistent);
+    if (inconsistent.length > 0) {
+      process.stderr.write(`\n  Inconsistent challenges:\n`);
+      for (const c of inconsistent) {
+        process.stderr.write(
+          `    ${c.challengeId}: passed ${c.passedRuns}/${c.totalRuns} runs, ` +
+            `scores [${c.scores.join(',')}], steps [${c.steps.join(',')}]\n`,
+        );
+      }
+    }
+    process.stderr.write(`${'─'.repeat(50)}\n`);
+
+    return best;
+  }
+
+  private computeConsistency(results: BenchmarkResult[]): ConsistencyMetrics {
+    const challengeIds = results[0].challengeScores.map((cs) => cs.challengeId);
+    const perChallenge: ConsistencyScore[] = [];
+
+    for (const cid of challengeIds) {
+      const scores: number[] = [];
+      const steps: number[] = [];
+      const latencies: number[] = [];
+      let passedRuns = 0;
+
+      for (const result of results) {
+        const cs = result.challengeScores.find((c) => c.challengeId === cid);
+        if (!cs) continue;
+        scores.push(cs.score);
+        steps.push(cs.evalSteps?.length ?? 0);
+        latencies.push(cs.latencyMs);
+        if (cs.correct) passedRuns++;
+      }
+
+      const title = results[0].challengeScores.find((c) => c.challengeId === cid)?.title ?? cid;
+      const isConsistent = passedRuns === 0 || passedRuns === results.length;
+
+      perChallenge.push({
+        challengeId: cid,
+        title,
+        scores,
+        steps,
+        latencies,
+        passedRuns,
+        totalRuns: results.length,
+        scoreVariance: this.variance(scores),
+        stepVariance: this.variance(steps),
+        latencyVariance: this.variance(latencies),
+        isConsistent,
+      });
+    }
+
+    const fullyConsistent = perChallenge.filter((c) => c.isConsistent).length;
+
+    return {
+      totalRuns: results.length,
+      avgScoreVariance: perChallenge.length > 0
+        ? perChallenge.reduce((s, c) => s + c.scoreVariance, 0) / perChallenge.length
+        : 0,
+      avgStepVariance: perChallenge.length > 0
+        ? perChallenge.reduce((s, c) => s + c.stepVariance, 0) / perChallenge.length
+        : 0,
+      avgLatencyVariance: perChallenge.length > 0
+        ? perChallenge.reduce((s, c) => s + c.latencyVariance, 0) / perChallenge.length
+        : 0,
+      fullyConsistentChallenges: fullyConsistent,
+      inconsistentChallenges: perChallenge.length - fullyConsistent,
+      consistencyPercentage: perChallenge.length > 0
+        ? Math.round((fullyConsistent / perChallenge.length) * 100)
+        : 100,
+      perChallenge,
+    };
+  }
+
+  private variance(values: number[]): number {
+    if (values.length <= 1) return 0;
+    const mean = values.reduce((s, v) => s + v, 0) / values.length;
+    return values.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / values.length;
   }
 
   private async runScenario(scenario: Scenario): Promise<ChallengeScore> {

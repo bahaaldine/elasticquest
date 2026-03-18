@@ -31,9 +31,18 @@ const GRADE_COLORS: Record<string, string> = {
 };
 
 const DOMAIN_LABELS: Record<string, string> = {
-  'full-text-search': 'Full-Text Search', 'ingest-indexing': 'Ingest & Indexing',
-  aggregations: 'Aggregations', observability: 'Observability',
-  'vector-search': 'Vector Search', security: 'Security', esql: 'ES|QL',
+  // Legacy challenge domains
+  'full-text-search': 'Search',
+  'ingest-indexing': 'Ingest',
+  aggregations: 'Aggs',
+  'vector-search': 'Vector',
+  // Scenario domains
+  search: 'Search',
+  observability: 'Observability',
+  security: 'Security',
+  kibana: 'Kibana',
+  cloud: 'Cloud',
+  'agent-builder': 'Agent Builder',
 };
 
 // --- Hooks ---

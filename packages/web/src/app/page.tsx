@@ -39,7 +39,7 @@ const DOMAINS = [
   },
   {
     icon: '&#128736;',
-    name: 'ES|QL',
+    name: 'Search',
     count: 6,
     isNew: true,
     desc: 'FROM, WHERE, STATS, EVAL with CASE, time-bucketed analysis, multi-turn discovery queries',
@@ -130,7 +130,7 @@ export default async function HomePage() {
 
       {/* Domains */}
       <section className="domains-section">
-        <h2>7 Domains, 65 Challenges</h2>
+        <h2>10 Domains, 65 Challenges</h2>
         <p className="subtitle">
           From beginner match queries to expert-level hybrid vector search with nested aggregations
         </p>

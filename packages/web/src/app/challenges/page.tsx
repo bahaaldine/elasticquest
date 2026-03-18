@@ -3,13 +3,18 @@
 import { useState } from 'react';
 
 const DOMAIN_LABELS: Record<string, string> = {
-  'full-text-search': 'Full-Text Search',
-  'ingest-indexing': 'Ingest & Indexing',
-  aggregations: 'Aggregations',
+  // Legacy challenge domains
+  'full-text-search': 'Search',
+  'ingest-indexing': 'Ingest',
+  aggregations: 'Aggs',
+  'vector-search': 'Vector',
+  // Scenario domains
+  search: 'Search',
   observability: 'Observability',
-  'vector-search': 'Vector Search',
-  security: 'Security / SIEM',
-  esql: 'ES|QL',
+  security: 'Security',
+  kibana: 'Kibana',
+  cloud: 'Cloud',
+  'agent-builder': 'Agent Builder',
 };
 
 const DIFF_COLORS: Record<string, string> = {
@@ -81,12 +86,12 @@ const CHALLENGES = [
   { id: 'mt-3-unknown-logs', domain: 'observability', difficulty: 'advanced', title: 'Unknown Log Schema', desc: 'Investigate logs with non-standard field names (ts, severity, svc)', multiTurn: true },
   { id: 'mt-4-investigate', domain: 'security', difficulty: 'expert', title: 'Security Investigation', desc: 'Discover auth schema, find IPs with 3+ failed login attempts', multiTurn: true },
   // ES|QL Scenarios (require real ES)
-  { id: 'esql-1-basic-filter', domain: 'esql', difficulty: 'beginner', title: 'ES|QL Basic Filtering', desc: 'FROM + WHERE + SORT + LIMIT on 600 articles', scenario: true },
-  { id: 'esql-2-stats-aggregation', domain: 'esql', difficulty: 'beginner', title: 'ES|QL Stats Aggregation', desc: 'STATS with COUNT/AVG grouped BY category', scenario: true },
-  { id: 'esql-3-eval-computed', domain: 'esql', difficulty: 'intermediate', title: 'ES|QL Computed Fields with EVAL', desc: 'EVAL + CASE for conditional classification', scenario: true },
-  { id: 'esql-4-log-error-analysis', domain: 'esql', difficulty: 'intermediate', title: 'ES|QL Log Error Analysis', desc: 'Error counting with COUNT_DISTINCT across 2500 logs', scenario: true },
-  { id: 'esql-5-time-bucket', domain: 'esql', difficulty: 'advanced', title: 'ES|QL Time-Bucketed Log Analysis', desc: 'BUCKET(@timestamp, 5 min) with log.level breakdown', scenario: true },
-  { id: 'esql-6-discover-and-query', domain: 'esql', difficulty: 'advanced', title: 'ES|QL Discovery and Query', desc: 'Multi-turn: discover schema then aggregate top authors', multiTurn: true, scenario: true },
+  { id: 'esql-1-basic-filter', domain: 'search', difficulty: 'beginner', title: 'ES|QL Basic Filtering', desc: 'FROM + WHERE + SORT + LIMIT on 600 articles', scenario: true },
+  { id: 'esql-2-stats-aggregation', domain: 'search', difficulty: 'beginner', title: 'ES|QL Stats Aggregation', desc: 'STATS with COUNT/AVG grouped BY category', scenario: true },
+  { id: 'esql-3-eval-computed', domain: 'search', difficulty: 'intermediate', title: 'ES|QL Computed Fields with EVAL', desc: 'EVAL + CASE for conditional classification', scenario: true },
+  { id: 'esql-4-log-error-analysis', domain: 'search', difficulty: 'intermediate', title: 'ES|QL Log Error Analysis', desc: 'Error counting with COUNT_DISTINCT across 2500 logs', scenario: true },
+  { id: 'esql-5-time-bucket', domain: 'search', difficulty: 'advanced', title: 'ES|QL Time-Bucketed Log Analysis', desc: 'BUCKET(@timestamp, 5 min) with log.level breakdown', scenario: true },
+  { id: 'esql-6-discover-and-query', domain: 'search', difficulty: 'advanced', title: 'ES|QL Discovery and Query', desc: 'Multi-turn: discover schema then aggregate top authors', multiTurn: true, scenario: true },
   // Observability Scenarios
   { id: 'obs-esql-1-error-investigation', domain: 'observability', difficulty: 'intermediate', title: 'Log Error Investigation (ES|QL)', desc: 'Error timeline across 2500 microservice logs', scenario: true },
   { id: 'obs-esql-2-error-breakdown', domain: 'observability', difficulty: 'intermediate', title: 'Service Error Breakdown (ES|QL)', desc: 'Count by service and log level', scenario: true },

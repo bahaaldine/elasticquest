@@ -52,7 +52,7 @@ export const kibanaScenarios: Scenario[] = [
   {
     id: 'kibana-1-alerting-rules',
     skillId: 'kibana-alerting-rules',
-    domain: 'esql',
+    domain: 'kibana',
     difficulty: 'intermediate',
     title: 'Create an ES Query Alerting Rule',
     description:
@@ -134,7 +134,7 @@ export const kibanaScenarios: Scenario[] = [
   {
     id: 'kibana-2-connectors',
     skillId: 'kibana-connectors',
-    domain: 'esql',
+    domain: 'kibana',
     difficulty: 'intermediate',
     title: 'Create a PagerDuty Connector',
     description:
@@ -191,7 +191,7 @@ export const kibanaScenarios: Scenario[] = [
   {
     id: 'kibana-3-dashboards',
     skillId: 'kibana-dashboards',
-    domain: 'esql',
+    domain: 'kibana',
     difficulty: 'advanced',
     title: 'Create a Dashboard with ES|QL Lens Panels',
     description:
@@ -272,7 +272,7 @@ export const kibanaScenarios: Scenario[] = [
   {
     id: 'kibana-4-agent-builder-tool',
     skillId: 'kibana-agent-builder',
-    domain: 'esql',
+    domain: 'agent-builder',
     difficulty: 'advanced',
     title: 'Create an ES|QL Tool for Agent Builder',
     description:
@@ -352,7 +352,7 @@ export const kibanaScenarios: Scenario[] = [
   {
     id: 'kibana-5-audit-config',
     skillId: 'kibana-audit',
-    domain: 'esql',
+    domain: 'kibana',
     difficulty: 'intermediate',
     title: 'Configure Kibana Audit Logging',
     description:
@@ -432,7 +432,7 @@ export const kibanaScenarios: Scenario[] = [
   {
     id: 'kibana-6-vega-esql',
     skillId: 'kibana-vega',
-    domain: 'esql',
+    domain: 'kibana',
     difficulty: 'advanced',
     title: 'Create a Vega-Lite Visualization with ES|QL',
     description:
@@ -525,7 +525,7 @@ export const kibanaScenarios: Scenario[] = [
   {
     id: 'kibana-7-streams',
     skillId: 'kibana-streams',
-    domain: 'esql',
+    domain: 'observability',
     difficulty: 'intermediate',
     title: 'Manage Kibana Stream Lifecycle',
     description:
@@ -600,7 +600,7 @@ export const kibanaScenarios: Scenario[] = [
   {
     id: 'kibana-8-connectors-preconfigured',
     skillId: 'kibana-connectors',
-    domain: 'esql',
+    domain: 'kibana',
     difficulty: 'advanced',
     title: 'Create Preconfigured Connectors Config',
     description:

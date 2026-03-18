@@ -236,7 +236,7 @@ export const elasticsearchSecurityScenarios: Scenario[] = [
   {
     id: 'es-sec-1-audit-failed-auth',
     skillId: 'elasticsearch-audit',
-    domain: 'esql',
+    domain: 'security',
     difficulty: 'intermediate',
     title: 'Audit Log: Failed Authentication Analysis',
     description:
@@ -356,7 +356,7 @@ export const elasticsearchSecurityScenarios: Scenario[] = [
   {
     id: 'es-sec-2-create-api-key',
     skillId: 'elasticsearch-authn',
-    domain: 'esql',
+    domain: 'security',
     difficulty: 'intermediate',
     title: 'Create an Elasticsearch API Key',
     description:
@@ -494,7 +494,7 @@ export const elasticsearchSecurityScenarios: Scenario[] = [
   {
     id: 'es-sec-3-create-role-dls',
     skillId: 'elasticsearch-authz',
-    domain: 'esql',
+    domain: 'security',
     difficulty: 'advanced',
     title: 'Create a Role with Document-Level Security',
     description:
@@ -634,7 +634,7 @@ export const elasticsearchSecurityScenarios: Scenario[] = [
   {
     id: 'es-sec-4-troubleshoot-401',
     skillId: 'elasticsearch-security-troubleshooting',
-    domain: 'esql',
+    domain: 'security',
     difficulty: 'advanced',
     title: 'Security Troubleshooting: 401 Unauthorized',
     description:

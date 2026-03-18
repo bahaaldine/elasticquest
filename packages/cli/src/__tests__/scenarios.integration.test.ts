@@ -320,7 +320,7 @@ describe('Scenario Runner E2E', () => {
         modelId: 'test:mock',
         backendMode: 'real',
         scenarioMode: true,
-        domains: ['esql'],
+        domains: ['search'],
         difficulties: ['beginner'],
       };
 

@@ -3,12 +3,18 @@ import { getChallengePassRates, getLeaderboard } from '@/lib/store';
 export const dynamic = 'force-dynamic';
 
 const DOMAIN_LABELS: Record<string, string> = {
+  // Legacy challenge domains
   'full-text-search': 'Search',
   'ingest-indexing': 'Ingest',
   aggregations: 'Aggs',
-  observability: 'Obs',
   'vector-search': 'Vector',
+  // Scenario domains
+  search: 'Search',
+  observability: 'Observability',
   security: 'Security',
+  kibana: 'Kibana',
+  cloud: 'Cloud',
+  'agent-builder': 'Agent Builder',
 };
 
 const DIFF_COLORS: Record<string, string> = {

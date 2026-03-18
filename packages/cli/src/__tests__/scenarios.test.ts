@@ -256,9 +256,9 @@ describe('Scenario Registry', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('should cover esql, observability, and security domains', () => {
+  it('should cover search, observability, and security domains', () => {
     const domains = new Set(getAllScenarios().map((s) => s.domain));
-    expect(domains).toContain('esql');
+    expect(domains).toContain('search');
     expect(domains).toContain('observability');
     expect(domains).toContain('security');
   });
@@ -272,9 +272,9 @@ describe('Scenario Registry', () => {
   });
 
   it('should filter by domain', () => {
-    const esqlScenarios = getScenariosByDomain('esql');
-    expect(esqlScenarios.length).toBeGreaterThan(0);
-    expect(esqlScenarios.every((s) => s.domain === 'esql')).toBe(true);
+    const searchScenarios = getScenariosByDomain('search');
+    expect(searchScenarios.length).toBeGreaterThan(0);
+    expect(searchScenarios.every((s) => s.domain === 'search')).toBe(true);
   });
 
   it('should filter by skill', () => {

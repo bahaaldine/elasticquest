@@ -45,6 +45,7 @@ interface ParsedArgs {
   skillsPath?: string;          // --skills-path: path to agent-skills repo
   compareSkills?: boolean;      // --compare-skills: run with and without skills
   startLocal?: boolean;         // --start-local: use Docker for local ES
+  runs?: number;                // --runs N: run each scenario N times for consistency
 }
 
 function parseArgs(): ParsedArgs {
@@ -138,6 +139,9 @@ function parseArgs(): ParsedArgs {
       case '--start-local':
         result.startLocal = true;
         break;
+      case '--runs':
+        result.runs = parseInt(args[++i], 10) || 1;
+        break;
       case '--leaderboard':
         result.command = 'leaderboard';
         break;
@@ -200,6 +204,7 @@ SCENARIO OPTIONS (skill-aligned challenges):
    --skills               Inject Elastic Agent Skills into prompts
    --skills-path <path>   Path to agent-skills repo or installation
    --compare-skills       Run scenarios with and without skills for comparison
+   --runs <N>             Run each scenario N times to measure consistency
 
 PLAY MODE OPTIONS:
   --mode <simulated|real>  Backend mode (default: simulated)
@@ -413,22 +418,29 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
         const newResults: BenchmarkResult[] = [];
 
         if (parsed.scenarios) {
+          const numRuns = parsed.runs ?? 1;
+
           // Scenario mode: run skill-aligned challenges
           if (parsed.compareSkills) {
-            // Run twice: without skills, then with skills
+            // Baseline runs
             process.stderr.write('  --- Baseline (no skills) ---\n\n');
             const baselineConfig = { ...config, skillsEnabled: false };
             const baselineRunner = new BenchmarkRunner(model, baselineConfig, realBackend);
-            const baselineResult = await baselineRunner.runScenarios();
+            const baselineResult = numRuns > 1
+              ? await baselineRunner.runScenariosWithConsistency(numRuns)
+              : await baselineRunner.runScenarios();
             baselineResult.backendType = parsed.startLocal ? 'start-local' : 'cloud';
             results.push(baselineResult);
             newResults.push(baselineResult);
             process.stderr.write(formatResult(baselineResult));
 
+            // Skills runs
             process.stderr.write('\n  --- With Skills ---\n\n');
             const skillsConfig = { ...config, skillsEnabled: true };
             const skillsRunner = new BenchmarkRunner(model, skillsConfig, realBackend);
-            const skillsResult = await skillsRunner.runScenarios();
+            const skillsResult = numRuns > 1
+              ? await skillsRunner.runScenariosWithConsistency(numRuns)
+              : await skillsRunner.runScenarios();
             skillsResult.backendType = parsed.startLocal ? 'start-local' : 'cloud';
             results.push(skillsResult);
             newResults.push(skillsResult);
@@ -439,10 +451,15 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
             process.stderr.write(`\n${'─'.repeat(50)}\n`);
             process.stderr.write(`  Skill Uplift: ${uplift >= 0 ? '+' : ''}${uplift}%\n`);
             process.stderr.write(`  Baseline: ${baselineResult.percentage}% | With Skills: ${skillsResult.percentage}%\n`);
+            if (baselineResult.consistency && skillsResult.consistency) {
+              process.stderr.write(`  Consistency: baseline ${baselineResult.consistency.consistencyPercentage}% vs skills ${skillsResult.consistency.consistencyPercentage}%\n`);
+            }
             process.stderr.write(`${'─'.repeat(50)}\n`);
           } else {
             const runner = new BenchmarkRunner(model, config, realBackend);
-            const result = await runner.runScenarios();
+            const result = numRuns > 1
+              ? await runner.runScenariosWithConsistency(numRuns)
+              : await runner.runScenarios();
             result.backendType = parsed.startLocal ? 'start-local' : 'cloud';
 
             store.addResult(result);

@@ -86,13 +86,18 @@ export interface EsqlResponse {
 // --- Game types ---
 
 export type Domain =
+  // Legacy challenge domains (Query DSL benchmarks)
   | 'full-text-search'
   | 'ingest-indexing'
   | 'aggregations'
-  | 'observability'
   | 'vector-search'
-  | 'security'
-  | 'esql';
+  // Scenario domains (skill-aligned)
+  | 'search'          // ES|QL queries, schema discovery, full-text via ES|QL
+  | 'observability'   // logs-search, llm-obs, SLOs, service-health, streams
+  | 'security'        // alert-triage, detection-rules, case-management, ES audit/auth
+  | 'kibana'          // alerting-rules, dashboards, connectors, vega, audit
+  | 'cloud'           // setup, create/manage project, access, network security
+  | 'agent-builder';  // Agent Builder tools and agents
 
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced' | 'expert';
 

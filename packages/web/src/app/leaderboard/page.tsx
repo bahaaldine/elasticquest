@@ -41,23 +41,31 @@ const GRADE_COLORS: Record<Grade, string> = {
 };
 
 const DOMAIN_LABELS: Record<string, string> = {
+  // Legacy challenge domains
   'full-text-search': 'Search',
   'ingest-indexing': 'Ingest',
   aggregations: 'Aggs',
-  observability: 'Obs',
   'vector-search': 'Vector',
+  // Scenario domains
+  search: 'Search',
+  observability: 'Observability',
   security: 'Security',
-  esql: 'ES|QL',
+  kibana: 'Kibana',
+  cloud: 'Cloud',
+  'agent-builder': 'Agent Builder',
 };
 
 const DOMAIN_FULL_LABELS: Record<string, string> = {
   'full-text-search': 'Full-Text Search',
   'ingest-indexing': 'Ingest & Indexing',
   aggregations: 'Aggregations',
-  observability: 'Observability',
   'vector-search': 'Vector Search',
+  search: 'Search (ES|QL)',
+  observability: 'Observability',
   security: 'Security',
-  esql: 'ES|QL',
+  kibana: 'Kibana',
+  cloud: 'Cloud',
+  'agent-builder': 'Agent Builder',
 };
 
 /** Get the effective score for an entry — domain score if filtered, overall otherwise */

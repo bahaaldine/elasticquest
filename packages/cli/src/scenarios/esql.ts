@@ -47,7 +47,7 @@ export const esqlScenarios: Scenario[] = [
   {
     id: 'esql-1-basic-filter',
     skillId: 'elasticsearch-esql',
-    domain: 'esql',
+    domain: 'search',
     difficulty: 'beginner',
     title: 'ES|QL Basic Filtering',
     description:
@@ -131,7 +131,7 @@ export const esqlScenarios: Scenario[] = [
   {
     id: 'esql-2-stats-aggregation',
     skillId: 'elasticsearch-esql',
-    domain: 'esql',
+    domain: 'search',
     difficulty: 'beginner',
     title: 'ES|QL Stats Aggregation',
     description:
@@ -223,7 +223,7 @@ export const esqlScenarios: Scenario[] = [
   {
     id: 'esql-3-eval-computed',
     skillId: 'elasticsearch-esql',
-    domain: 'esql',
+    domain: 'search',
     difficulty: 'intermediate',
     title: 'ES|QL Computed Fields with EVAL',
     description:
@@ -299,7 +299,7 @@ export const esqlScenarios: Scenario[] = [
   {
     id: 'esql-4-log-error-analysis',
     skillId: 'elasticsearch-esql',
-    domain: 'esql',
+    domain: 'search',
     difficulty: 'intermediate',
     title: 'ES|QL Log Error Analysis',
     description:
@@ -385,7 +385,7 @@ export const esqlScenarios: Scenario[] = [
   {
     id: 'esql-5-time-bucket',
     skillId: 'elasticsearch-esql',
-    domain: 'esql',
+    domain: 'search',
     difficulty: 'advanced',
     title: 'ES|QL Time-Bucketed Log Analysis',
     description:
@@ -467,7 +467,7 @@ export const esqlScenarios: Scenario[] = [
   {
     id: 'esql-6-discover-and-query',
     skillId: 'elasticsearch-esql',
-    domain: 'esql',
+    domain: 'search',
     difficulty: 'advanced',
     title: 'ES|QL Discovery and Query',
     description:
