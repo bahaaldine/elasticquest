@@ -1,6 +1,6 @@
 {
   "name": "elastic-quest",
-  "version": "2.0.10",
+  "version": "2.0.11",
   "description": "ElasticQuest - Elasticsearch benchmark for AI models. 31 challenges across 5 domains.",
   "main": "dist/index.js",
   "bin": {

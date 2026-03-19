@@ -260,11 +260,20 @@ EXAMPLES:
 }
 
 async function submitToLeaderboard(result: BenchmarkResult, apiUrl?: string): Promise<void> {
+  const adminKey = process.env.ELASTIC_QUEST_ADMIN_KEY ?? '';
+  if (!adminKey) {
+    // No admin key = no public submission. Results are still saved locally and output to stdout.
+    return;
+  }
+
   const url = apiUrl ?? DEFAULT_API_URL;
   try {
     const response = await fetch(`${url}/api/scores`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-key': adminKey,
+      },
       body: JSON.stringify({
         modelId: result.modelId,
         modelName: result.modelName,
