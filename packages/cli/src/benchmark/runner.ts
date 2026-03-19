@@ -20,6 +20,7 @@ import type {
 } from '../types';
 import { SimulatedBackend } from '../elastic/simulated-backend';
 import { RealBackend } from '../elastic/real-backend';
+import { meetsLicenseLevel } from '../elastic/license';
 import { getAllChallenges } from '../challenges';
 import { getAllScenarios } from '../scenarios';
 import { loadSkill, formatSkillForPrompt } from '../skills';
@@ -137,6 +138,21 @@ export class BenchmarkRunner {
     if (this.config.difficulties && this.config.difficulties.length > 0) {
       scenarios = scenarios.filter((s) =>
         this.config.difficulties!.includes(s.difficulty),
+      );
+    }
+
+    // Filter by license level — skip scenarios that require higher license
+    const currentLicense = this.config.licenseLevel ?? 'basic';
+    const beforeLicenseFilter = scenarios.length;
+    scenarios = scenarios.filter((s) => {
+      const required = s.requiredLicense ?? 'basic';
+      return meetsLicenseLevel(currentLicense, required);
+    });
+    const skippedByLicense = beforeLicenseFilter - scenarios.length;
+    if (skippedByLicense > 0) {
+      process.stderr.write(
+        `  Skipping ${skippedByLicense} scenario(s) that require a higher license ` +
+          `(current: ${currentLicense}). Use --license-file or --start-trial.\n\n`,
       );
     }
 

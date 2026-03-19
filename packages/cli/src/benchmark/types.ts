@@ -40,6 +40,9 @@ export interface BenchmarkConfig {
   skillsEnabled?: boolean;   // inject skill content into prompts
   skillsPath?: string;       // path to agent-skills repo or installation
   compareSkills?: boolean;   // run both with and without skills for comparison
+
+  // License
+  licenseLevel?: string;     // current ES license level (basic/gold/platinum/enterprise/trial)
 }
 
 /** A single step in the evaluation pipeline — tracks what happened and why. */

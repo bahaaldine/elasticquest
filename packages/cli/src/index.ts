@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
-import { SimulatedBackend, RealBackend, startLocal, stopLocal } from './elastic';
-import type { RealBackendConfig, StartLocalResult } from './elastic';
+import {
+  SimulatedBackend, RealBackend, startLocal, stopLocal,
+  getLicense, uploadLicense, startTrialLicense, buildAuthHeader,
+} from './elastic';
+import type { RealBackendConfig, StartLocalResult, LicenseInfo } from './elastic';
 import type { ElasticBackend, Domain, Difficulty } from './types';
 import { GameEngine } from './engine/game-engine';
 import { GameServer } from './protocol/game-server';
@@ -46,6 +49,8 @@ interface ParsedArgs {
   compareSkills?: boolean;      // --compare-skills: run with and without skills
   startLocal?: boolean;         // --start-local: use Docker for local ES
   runs?: number;                // --runs N: run each scenario N times for consistency
+  licenseFile?: string;         // --license-file: path to ES license JSON
+  startTrial?: boolean;         // --start-trial: activate 30-day trial license
 }
 
 function parseArgs(): ParsedArgs {
@@ -142,6 +147,12 @@ function parseArgs(): ParsedArgs {
       case '--runs':
         result.runs = parseInt(args[++i], 10) || 1;
         break;
+      case '--license-file':
+        result.licenseFile = args[++i];
+        break;
+      case '--start-trial':
+        result.startTrial = true;
+        break;
       case '--leaderboard':
         result.command = 'leaderboard';
         break;
@@ -205,6 +216,10 @@ SCENARIO OPTIONS (skill-aligned challenges):
    --skills-path <path>   Path to agent-skills repo or installation
    --compare-skills       Run scenarios with and without skills for comparison
    --runs <N>             Run each scenario N times to measure consistency
+
+LICENSE OPTIONS (for enterprise-gated scenarios):
+   --license-file <path>  Upload an Enterprise/Platinum license to ES before benchmarking
+   --start-trial          Activate a 30-day trial license (once per major version)
 
 PLAY MODE OPTIONS:
   --mode <simulated|real>  Backend mode (default: simulated)
@@ -379,6 +394,46 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
     backendLabel = `Real ES (${parsed.esConfig.node || 'cloud'})`;
   }
 
+  // Handle license management for real backends
+  let licenseLevel = 'basic';
+  if (parsed.mode === 'real' && parsed.scenarios) {
+    const esUrl = startLocalResult?.esUrl ?? parsed.esConfig?.node ?? '';
+    if (esUrl) {
+      try {
+        const authHeader = buildAuthHeader({
+          apiKey: parsed.esConfig?.apiKey ?? startLocalResult?.apiKey,
+          username: parsed.esConfig?.username,
+          password: parsed.esConfig?.password,
+        });
+
+        // Upload license file if provided
+        if (parsed.licenseFile) {
+          const licenseInfo = await uploadLicense(esUrl, authHeader, parsed.licenseFile);
+          licenseLevel = licenseInfo.type.toLowerCase();
+          process.stderr.write(`  License: ${licenseInfo.type} (${licenseInfo.status})\n`);
+        }
+        // Start trial if requested
+        else if (parsed.startTrial) {
+          const licenseInfo = await startTrialLicense(esUrl, authHeader);
+          licenseLevel = licenseInfo.type.toLowerCase();
+          process.stderr.write(`  License: ${licenseInfo.type} (${licenseInfo.status})\n`);
+        }
+        // Just check current license
+        else {
+          const licenseInfo = await getLicense(esUrl, authHeader);
+          licenseLevel = licenseInfo.type.toLowerCase();
+          process.stderr.write(`  License: ${licenseInfo.type} (${licenseInfo.status})\n`);
+        }
+      } catch (err) {
+        process.stderr.write(
+          `  Warning: could not check license: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.stderr.write('  Assuming basic license. Enterprise scenarios may be skipped.\n');
+      }
+    }
+    process.stderr.write('\n');
+  }
+
   const store = new BenchmarkStore();
   const results: BenchmarkResult[] = [];
 
@@ -391,8 +446,10 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
       process.stderr.write(`  ElasticQuest Benchmark${progress}\n`);
       process.stderr.write(`  Model: ${modelId}\n`);
       process.stderr.write(`  Backend: ${backendLabel}\n`);
+      process.stderr.write(`  License: ${licenseLevel}\n`);
       if (parsed.scenarios) process.stderr.write(`  Mode: Scenarios (skill-aligned)\n`);
       if (parsed.skills) process.stderr.write(`  Skills: enabled\n`);
+      if (parsed.runs && parsed.runs > 1) process.stderr.write(`  Runs: ${parsed.runs} (consistency mode)\n`);
       if (parsed.domains) process.stderr.write(`  Domains: ${parsed.domains.join(', ')}\n`);
       if (parsed.difficulties) process.stderr.write(`  Difficulties: ${parsed.difficulties.join(', ')}\n`);
       process.stderr.write(`${'═'.repeat(70)}\n\n`);
@@ -413,6 +470,7 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
           skillsEnabled: parsed.skills,
           skillsPath: parsed.skillsPath,
           compareSkills: parsed.compareSkills,
+          licenseLevel,
         };
 
         const newResults: BenchmarkResult[] = [];

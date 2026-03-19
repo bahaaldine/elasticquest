@@ -101,6 +101,9 @@ export type Domain =
 
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced' | 'expert';
 
+/** Elasticsearch license levels (ascending order of features). */
+export type LicenseLevel = 'basic' | 'gold' | 'platinum' | 'enterprise' | 'trial';
+
 export interface Challenge {
   id: string;
   domain: Domain;
@@ -165,6 +168,9 @@ export interface Scenario {
   // Skill content paths (relative to skills repo root)
   skillPaths?: string[];         // e.g. ['elasticsearch/elasticsearch-esql/SKILL.md']
   skillReferencePaths?: string[]; // e.g. ['elasticsearch/elasticsearch-esql/references/esql-reference.md']
+
+  /** Minimum license level required to run this scenario. Default: 'basic'. */
+  requiredLicense?: LicenseLevel;
 }
 
 export interface ValidationResult {

@@ -274,6 +274,7 @@ export const kibanaScenarios: Scenario[] = [
     skillId: 'kibana-agent-builder',
     domain: 'agent-builder',
     difficulty: 'advanced',
+    requiredLicense: 'enterprise',
     title: 'Create an ES|QL Tool for Agent Builder',
     description:
       'Produce the JSON request body to create a custom ES|QL tool in Kibana Agent Builder.\n' +
