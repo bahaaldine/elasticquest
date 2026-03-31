@@ -1,5 +1,7 @@
 import type { ModelAdapter, ModelResponse } from './types';
+import { DEFAULT_SYSTEM_PROMPT } from './types';
 import * as readline from 'readline';
+import { retryFetch } from './retry';
 
 // --- OpenRouter model info ---
 
@@ -150,9 +152,9 @@ export class OpenRouterAdapter implements ModelAdapter {
     }
   }
 
-  async complete(prompt: string): Promise<ModelResponse> {
+  async complete(prompt: string, systemPrompt?: string): Promise<ModelResponse> {
     const start = Date.now();
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await retryFetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -164,8 +166,7 @@ export class OpenRouterAdapter implements ModelAdapter {
         messages: [
           {
             role: 'system',
-            content:
-              'You are an Elasticsearch expert. When given a challenge, respond ONLY with a valid JSON object containing the Elasticsearch query body. No explanation, no markdown, just the JSON query object.',
+            content: systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
           },
           { role: 'user', content: prompt },
         ],

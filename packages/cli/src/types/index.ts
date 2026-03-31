@@ -97,12 +97,20 @@ export type Domain =
   | 'security'        // alert-triage, detection-rules, case-management, ES audit/auth
   | 'kibana'          // alerting-rules, dashboards, connectors, vega, audit
   | 'cloud'           // setup, create/manage project, access, network security
-  | 'agent-builder';  // Agent Builder tools and agents
+  | 'agent-builder'   // Agent Builder tools and agents
+  | 'esql';           // standalone ES|QL challenges
 
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced' | 'expert';
 
 /** Elasticsearch license levels (ascending order of features). */
 export type LicenseLevel = 'basic' | 'gold' | 'platinum' | 'enterprise' | 'trial';
+
+export interface EsqlResponse {
+  columns: Array<{ name: string; type: string }>;
+  values: unknown[][];
+}
+
+export type QueryType = 'dsl' | 'esql';
 
 export interface Challenge {
   id: string;
@@ -111,15 +119,20 @@ export interface Challenge {
   title: string;
   description: string;
   hints: string[];
+  esqlHints?: string[];
   indexName: string;
   seedData: Document[];
   mapping?: IndexMapping;
   pipeline?: IngestPipeline;
   validate: (response: SearchResponse, backend: ElasticBackend) => Promise<ValidationResult>;
+  validateEsql?: (response: EsqlResponse, query: string, backend: ElasticBackend) => Promise<ValidationResult>;
   maxScore: number;
   timeLimitMs: number;
   multiTurn?: boolean;
   discoveryPrompt?: string;
+  queryType?: QueryType;
+  expectedEsqlResponse?: EsqlResponse;
+  esqlIncompatible?: boolean;
 }
 
 // --- Scenario type (skill-aligned challenges) ---
@@ -318,8 +331,8 @@ export interface ElasticBackend {
   search(index: string, query: Record<string, unknown>): Promise<SearchResponse>;
   count(index: string, query?: Record<string, unknown>): Promise<number>;
 
-  /** Execute an ES|QL query. Only available on real backends. */
-  esql?(query: string): Promise<EsqlResponse>;
+  /** Execute an ES|QL query. */
+  esqlQuery(query: string): Promise<EsqlResponse>;
 
   putPipeline(id: string, pipeline: IngestPipeline): Promise<void>;
   simulatePipeline(id: string, docs: Record<string, unknown>[]): Promise<Record<string, unknown>[]>;

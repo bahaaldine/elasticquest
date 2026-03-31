@@ -1,4 +1,6 @@
 import type { Challenge, SearchResponse, ElasticBackend } from '../types';
+import type { EsqlResponse } from '../types';
+import { validateEsqlChallenge } from './esql-helpers';
 
 function makeVector(seed: number, dims: number): number[] {
   const vec: number[] = [];
@@ -30,6 +32,10 @@ Use the top-level knn parameter:
   "knn": { "field": "embedding", "query_vector": [...], "k": 3, "num_candidates": 10 }
 }`,
     hints: ['Use knn at the top level (not inside query)', 'field: "embedding", k: 3'],
+    esqlHints: [
+      'Use WHERE KNN(field, k, query_vector) for vector similarity search',
+      'Add METADATA _score to FROM for relevance scoring, then SORT _score DESC',
+    ],
     indexName: 'eq-kb',
     mapping: { properties: { title: { type: 'text' }, content: { type: 'text' }, category: { type: 'keyword' }, embedding: { type: 'dense_vector', dims: 8, similarity: 'cosine' } } },
     seedData: [
@@ -51,6 +57,17 @@ Use the top-level knn parameter:
       if (found.length === 3) score += 10;
       const correct = found.length === expectedIds.length && hitIds.length === 3;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Found the 3 most similar tech-support articles.' : `Found ${found.length}/${expectedIds.length}. Expected tech-support docs (1, 2, 5).` };
+    },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bKNN\b/i, points: 40, label: 'KNN' },
+          { pattern: /\bembedding\b/i, points: 10, label: 'embedding field' },
+          { pattern: /\bLIMIT\b/i, points: 10, label: 'LIMIT' },
+        ],
+        expectedRowCount: 3,
+      });
     },
     maxScore: 100,
     timeLimitMs: 45000,
@@ -74,6 +91,10 @@ Use the top-level knn parameter:
 
 This pre-filters candidates before computing similarity.`,
     hints: ['Add a filter inside the knn parameter', 'This restricts kNN candidates to a subset'],
+    esqlHints: [
+      'In ES|QL, combine KNN with a WHERE filter using AND: WHERE KNN(field, k, vec) AND category == "value"',
+      'The WHERE clause filters candidates before or alongside similarity computation',
+    ],
     indexName: 'eq-kb',
     mapping: { properties: { title: { type: 'text' }, content: { type: 'text' }, category: { type: 'keyword' }, embedding: { type: 'dense_vector', dims: 8, similarity: 'cosine' } } },
     seedData: [
@@ -85,7 +106,6 @@ This pre-filters candidates before computing similarity.`,
     ],
     validate: async (response: SearchResponse): Promise<{ correct: boolean; score: number; maxScore: number; feedback: string }> => {
       const hitIds = response.hits.hits.map((h) => h._id);
-      // Only tech-support docs: 1, 2, 5. k=2 so closest 2 to generalVec among those.
       let score = 0;
       if (hitIds.length === 2) score += 30;
       const allTechSupport = hitIds.every((id) => ['1', '2', '5'].includes(id));
@@ -93,6 +113,18 @@ This pre-filters candidates before computing similarity.`,
       if (hitIds.length === 2 && allTechSupport) score += 20;
       const correct = hitIds.length === 2 && allTechSupport;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'kNN with filter returned 2 tech-support docs.' : `Expected 2 tech-support docs. Got ${hitIds.length} docs: [${hitIds.join(',')}].` };
+    },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bKNN\b/i, points: 30, label: 'KNN' },
+          { pattern: /\bcategory\b/i, points: 20, label: 'category filter' },
+          { pattern: /\btech-support\b/i, points: 15, label: 'tech-support value' },
+          { pattern: /\bLIMIT\b/i, points: 10, label: 'LIMIT' },
+        ],
+        expectedRowCount: 2,
+      });
     },
     maxScore: 100,
     timeLimitMs: 45000,
@@ -109,6 +141,11 @@ This pre-filters candidates before computing similarity.`,
 
 Use both "knn" and "query" at the top level.`,
     hints: ['Include both knn and query at top level', 'ES combines scores from both'],
+    esqlHints: [
+      'Use FORK to run KNN and MATCH branches in parallel, then FUSE to merge results',
+      'Include METADATA _id, _index, _score on the FROM clause — FUSE requires all three',
+      'Each branch should SORT _score DESC and LIMIT results before FUSE',
+    ],
     indexName: 'eq-kb',
     mapping: { properties: { title: { type: 'text' }, content: { type: 'text' }, category: { type: 'keyword' }, embedding: { type: 'dense_vector', dims: 8, similarity: 'cosine' } } },
     seedData: [
@@ -130,6 +167,18 @@ Use both "knn" and "query" at the top level.`,
       const correct = hitIds.includes('1') && score >= 70;
       return { correct, score: Math.max(0, Math.min(100, score)), maxScore: 100, feedback: correct ? 'Hybrid search correctly combined vector similarity with text.' : `Score: ${Math.max(0, score)}/100. Doc 1 (password + matching vector) should appear.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 5, label: 'FROM' },
+          { pattern: /\bFORK\b/i, points: 25, label: 'FORK' },
+          { pattern: /\bKNN\b/i, points: 20, label: 'KNN' },
+          { pattern: /\bMATCH\b/i, points: 15, label: 'MATCH' },
+          { pattern: /\bpassword\b/i, points: 10, label: 'password search term' },
+          { pattern: /\bFUSE\b/i, points: 20, label: 'FUSE' },
+        ],
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -144,6 +193,10 @@ ${JSON.stringify(techVec)}
 
 Then aggregate the results by "category" (terms agg named "categories") to see which categories the similar documents belong to.`,
     hints: ['Use knn at top level with k=5', 'Add aggs block with terms on category'],
+    esqlHints: [
+      'Use WHERE KNN(embedding, 5, query_vector) to find the 5 nearest neighbors',
+      'Then pipe to STATS COUNT(*) BY category to aggregate results by category',
+    ],
     indexName: 'eq-kb',
     mapping: { properties: { title: { type: 'text' }, content: { type: 'text' }, category: { type: 'keyword' }, embedding: { type: 'dense_vector', dims: 8, similarity: 'cosine' } } },
     seedData: [
@@ -161,12 +214,23 @@ Then aggregate the results by "category" (terms agg named "categories") to see w
       const catAgg = response.aggregations?.categories;
       if (!catAgg?.buckets) return { correct: false, score, maxScore: 100, feedback: 'Missing "categories" aggregation on kNN results.' };
       score += 30;
-      // Most results should be tech-support
       const techBucket = catAgg.buckets.find((b) => b.key === 'tech-support');
       if (techBucket && techBucket.doc_count >= 3) score += 30;
       if (catAgg.buckets.length >= 1) score += 20;
       const correct = score >= 80;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'kNN + aggregation shows tech-support dominates similar docs.' : `Score: ${score}/100. Combine knn with aggs.` };
+    },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bKNN\b/i, points: 30, label: 'KNN' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bCOUNT\b/i, points: 15, label: 'COUNT' },
+          { pattern: /\bBY\b.*\bcategory\b/i, points: 15, label: 'BY category' },
+        ],
+        expectedColumns: ['category'],
+      });
     },
     maxScore: 100,
     timeLimitMs: 60000,

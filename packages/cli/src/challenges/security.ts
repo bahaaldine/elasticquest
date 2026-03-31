@@ -1,4 +1,6 @@
 import type { Challenge, SearchResponse, ElasticBackend } from '../types';
+import type { EsqlResponse } from '../types';
+import { validateEsqlChallenge } from './esql-helpers';
 
 export const securityChallenges: Challenge[] = [
   // --- BEGINNER ---
@@ -15,6 +17,10 @@ Use a prefix or wildcard query on source_ip and a term filter on action.`,
     hints: [
       'Use a wildcard query with value "10.0.1.*" on source_ip, or a prefix query with value "10.0.1."',
       'Combine with a term query on action: "deny" using a bool must/filter',
+    ],
+    esqlHints: [
+      'Use WHERE with LIKE or STARTS_WITH on the IP field to match the subnet pattern',
+      'Combine with AND and == for the action filter',
     ],
     indexName: 'eq-netflow',
     mapping: {
@@ -52,6 +58,17 @@ Use a prefix or wildcard query on source_ip and a term filter on action.`,
           : `Found ${found.length}/${expectedIds.length} expected events. ${falsePositives.length} false positive(s). Filter: source_ip "10.0.1.*" AND action "deny".`,
       };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 20, label: 'WHERE' },
+          { pattern: /10\.0\.1/i, points: 20, label: 'subnet filter' },
+          { pattern: /deny/i, points: 20, label: 'deny action' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -74,6 +91,11 @@ Requirements:
       'Use bool filter with term on action and range on @timestamp',
       'Add a terms aggregation named "by_ip" on "source_ip"',
       'Set size: 0 to skip returning hits',
+    ],
+    esqlHints: [
+      'Use WHERE with == and >= / <= to filter by action and time range',
+      'Use STATS COUNT(*) BY source_ip to group by source IP',
+      'Use SORT count DESC for top offenders',
     ],
     indexName: 'eq-auth-logs',
     mapping: {
@@ -128,6 +150,19 @@ Requirements:
           ? 'Correct! 203.0.113.50 had 3 failures, 198.51.100.23 had 2 failures in the window.'
           : `Score: ${score}/100. Expected 2 IP buckets: 203.0.113.50(3) and 198.51.100.23(2). Got ${byIp.buckets.length} buckets. Ensure range filter excludes doc 7 (outside window) and term filter excludes successes.`,
       };
+    },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 15, label: 'WHERE' },
+          { pattern: /login_failed/i, points: 15, label: 'failed login filter' },
+          { pattern: /\bSTATS\b/i, points: 15, label: 'STATS' },
+          { pattern: /\bCOUNT\b/i, points: 10, label: 'COUNT' },
+          { pattern: /\bBY\b.*source_ip/i, points: 15, label: 'BY source_ip' },
+        ],
+        expectedRowCount: 2,
+      });
     },
     maxScore: 100,
     timeLimitMs: 45000,
@@ -206,6 +241,7 @@ Requirements:
     },
     maxScore: 100,
     timeLimitMs: 45000,
+    esqlIncompatible: true,
   },
 
   // --- ADVANCED ---
@@ -229,6 +265,10 @@ Requirements:
       'Use a filters aggregation with named filters (not an array)',
       'Each filter is a range query on the "severity" field',
       'The filters key should be "severity_levels"',
+    ],
+    esqlHints: [
+      'Use STATS with per-aggregation WHERE to count each severity range in a single row',
+      'e.g., critical = COUNT(*) WHERE severity >= 8, high = COUNT(*) WHERE severity >= 5 AND severity <= 7',
     ],
     indexName: 'eq-alerts',
     mapping: {
@@ -312,6 +352,18 @@ Requirements:
           : `${correctBuckets}/4 severity buckets correct. Expected: critical=3, high=2, medium=1, low=2. Got: critical=${critical?.doc_count}, high=${high?.doc_count}, medium=${medium?.doc_count}, low=${low?.doc_count}.`,
       };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bCOUNT\b/i, points: 15, label: 'COUNT' },
+          { pattern: /severity/i, points: 20, label: 'severity field' },
+        ],
+        expectedColumns: ['critical', 'high', 'medium', 'low'],
+        expectedRowCount: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -336,6 +388,10 @@ The result should show each user with their breakdown of login_success vs login_
       'Use a terms aggregation "by_user" on "user"',
       'Nest a terms aggregation "by_action" on "action" inside by_user',
       'Set size: 0 to only return aggregation results',
+    ],
+    esqlHints: [
+      'Use STATS COUNT(*) BY user, action for a two-level breakdown',
+      'This groups actions by user to find suspicious patterns',
     ],
     indexName: 'eq-auth-events',
     mapping: {
@@ -428,6 +484,19 @@ The result should show each user with their breakdown of login_success vs login_
           ? 'Correct! "admin" has both failed and successful logins — potential compromise. "jdoe" is clean (success only). "svc-backup" has only failures (lockout, not compromise).'
           : `Score: ${score}/100. Build: by_user -> by_action. Admin should show 2 failures + 1 success. Check sub-aggregation structure.`,
       };
+    },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bCOUNT\b/i, points: 15, label: 'COUNT' },
+          { pattern: /\bBY\b.*\buser\b/i, points: 20, label: 'BY user' },
+          { pattern: /\baction\b/i, points: 15, label: 'action field' },
+        ],
+        expectedRowCount: 3,
+        rowCountTolerance: 3,
+      });
     },
     maxScore: 100,
     timeLimitMs: 60000,

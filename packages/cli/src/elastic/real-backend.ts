@@ -136,6 +136,19 @@ export class RealBackend implements ElasticBackend {
     };
   }
 
+  async esqlQuery(query: string): Promise<EsqlResponse> {
+    const result = await this.client.esql.query({
+      query,
+      format: 'json',
+    });
+
+    const raw = result as unknown as Record<string, unknown>;
+    return {
+      columns: (raw.columns as EsqlResponse['columns']) ?? [],
+      values: (raw.values as EsqlResponse['values']) ?? [],
+    };
+  }
+
   async count(index: string, query?: Record<string, unknown>): Promise<number> {
     const result = await this.client.count({
       index,
@@ -144,18 +157,6 @@ export class RealBackend implements ElasticBackend {
     return result.count;
   }
 
-  async esql(query: string): Promise<EsqlResponse> {
-    const result = await this.client.transport.request({
-      method: 'POST',
-      path: '/_query',
-      body: { query },
-    }) as { columns: Array<{ name: string; type: string }>; values: unknown[][] };
-
-    return {
-      columns: result.columns ?? [],
-      values: result.values ?? [],
-    };
-  }
 
   /** Get the node URL for this backend. */
   getNode(): string {

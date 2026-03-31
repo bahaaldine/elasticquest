@@ -1,4 +1,5 @@
-import type { Challenge, SearchResponse, ElasticBackend } from '../types';
+import type { Challenge, SearchResponse, ElasticBackend, EsqlResponse } from '../types';
+import { validateEsqlChallenge } from './esql-helpers';
 
 export const ingestIndexingChallenges: Challenge[] = [
   // --- BEGINNER ---
@@ -13,6 +14,10 @@ Write a query to find all products in the "electronics" category priced between 
     hints: [
       'Use a bool query with filter clauses for efficiency',
       'Use a term query on keyword fields, range on numeric fields',
+    ],
+    esqlHints: [
+      'Use WHERE with == for keyword fields and >= / <= for numeric range filters',
+      'Combine multiple conditions with AND',
     ],
     indexName: 'eq-ecommerce',
     mapping: {
@@ -43,6 +48,18 @@ Write a query to find all products in the "electronics" category priced between 
       const score = Math.floor((found.length / expectedIds.length) * 85) - falsePositives.length * 15;
       return { correct, score: Math.max(0, Math.min(100, score)), maxScore: 100, feedback: correct ? 'Correct! Found all in-stock electronics between $100-$500.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} false positives.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 20, label: 'WHERE' },
+          { pattern: /electronics/i, points: 15, label: 'category filter' },
+          { pattern: /price/i, points: 15, label: 'price filter' },
+          { pattern: /in_stock/i, points: 15, label: 'in_stock filter' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -58,6 +75,11 @@ Write a query to find all products in the "electronics" category priced between 
       'Use sort: [{"price": {"order": "desc"}}]',
       'Use size: 3 to limit results',
       'Use _source: ["name", "price"] to filter fields',
+    ],
+    esqlHints: [
+      'Use SORT field DESC for ordering',
+      'Use LIMIT 3 to restrict results',
+      'Use KEEP to select only the needed columns',
     ],
     indexName: 'eq-ecommerce',
     mapping: {
@@ -88,6 +110,16 @@ Write a query to find all products in the "electronics" category priced between 
       const correct = correctSize && correctOrder;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Correct! Top 3 most expensive products in descending order.' : `${correctSize ? '' : `Expected 3 results, got ${hits.length}. `}${correctOrder ? '' : `Expected order: ${expectedOrder.join(', ')}, got: ${actualOrder.join(', ')}.`}` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bSORT\b.*\bprice\b.*\bDESC\b/i, points: 35, label: 'SORT price DESC' },
+          { pattern: /\bLIMIT\s+3\b/i, points: 25, label: 'LIMIT 3' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -102,6 +134,10 @@ Fields: order_id (keyword), customer (keyword), order_date (date), total (float)
     hints: [
       'Use a range query on order_date with gte and lte',
       'Sort by order_date asc',
+    ],
+    esqlHints: [
+      'Use WHERE with >= and <= on the date field for range filtering',
+      'Use SORT field ASC for ascending order',
     ],
     indexName: 'eq-orders',
     mapping: {
@@ -133,6 +169,17 @@ Fields: order_id (keyword), customer (keyword), order_date (date), total (float)
       if (correctOrder) score += 30;
       return { correct: correctContent && correctOrder, score: Math.min(100, score), maxScore: 100, feedback: correctContent && correctOrder ? 'Correct! All February orders found in chronological order.' : `Content: ${found.length}/${expectedIds.length}. Sort: ${correctOrder ? 'correct' : 'should be ascending by order_date'}.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 20, label: 'WHERE' },
+          { pattern: /2024-02/i, points: 25, label: 'February date filter' },
+          { pattern: /\bSORT\b/i, points: 15, label: 'SORT' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -145,6 +192,9 @@ Fields: order_id (keyword), customer (keyword), order_date (date), total (float)
     hints: [
       'Use a terms query to match multiple values at once',
       'terms: { status: ["pending", "shipped"] }',
+    ],
+    esqlHints: [
+      'Use WHERE field IN ("value1", "value2") to match multiple values at once',
     ],
     indexName: 'eq-orders',
     mapping: {
@@ -173,6 +223,17 @@ Fields: order_id (keyword), customer (keyword), order_date (date), total (float)
       const score = Math.floor((found.length / expectedIds.length) * 85) - falsePositives.length * 15;
       return { correct, score: Math.max(0, score), maxScore: 100, feedback: correct ? 'Correct! Found all pending and shipped orders.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} false positives.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 20, label: 'WHERE' },
+          { pattern: /pending/i, points: 20, label: 'pending status' },
+          { pattern: /shipped/i, points: 20, label: 'shipped status' },
+        ],
+        expectedRowCount: 4,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -189,6 +250,10 @@ This means: from=3, size=3, sorted by price ascending.`,
     hints: [
       'from is 0-indexed: page 2 with size 3 means from=3',
       'Use sort: [{"price": "asc"}]',
+    ],
+    esqlHints: [
+      'ES|QL has no offset pagination — use LIMIT N+M and discard the first N client-side',
+      'Use SORT field ASC for ascending order',
     ],
     indexName: 'eq-ecommerce',
     mapping: {
@@ -221,6 +286,17 @@ This means: from=3, size=3, sorted by price ascending.`,
       if (correctOrder) score += 60;
       return { correct: correctSize && correctOrder, score, maxScore: 100, feedback: correctSize && correctOrder ? 'Correct! Page 2 shows items 4-6 by price.' : `Expected [4,5,6], got [${actualOrder.join(',')}]. size=${hits.length}.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 20, label: 'FROM' },
+          { pattern: /\bSORT\b.*\bprice\b/i, points: 30, label: 'SORT price' },
+          { pattern: /\bLIMIT\b/i, points: 20, label: 'LIMIT' },
+        ],
+        expectedRowCount: 3,
+        rowCountTolerance: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -234,6 +310,10 @@ This means: from=3, size=3, sorted by price ascending.`,
       'Use size: 0 so no docs are returned',
       'The count is in hits.total.value',
       'Use bool filter with term + range',
+    ],
+    esqlHints: [
+      'Use STATS COUNT(*) to get the count without returning individual documents',
+      'Use WHERE with == and >= to combine keyword and numeric filters',
     ],
     indexName: 'eq-ecommerce',
     mapping: {
@@ -262,6 +342,18 @@ This means: from=3, size=3, sorted by price ascending.`,
       if (noHits) score += 30;
       const correct = actualCount === expectedCount && noHits;
       return { correct, score, maxScore: 100, feedback: correct ? 'Correct! 3 electronics priced above $50.' : `Expected count ${expectedCount}, got ${actualCount}. ${noHits ? '' : 'Use size:0.'}` };
+    },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 15, label: 'WHERE' },
+          { pattern: /electronics/i, points: 15, label: 'category filter' },
+          { pattern: /\bSTATS\b.*\bCOUNT\b|\bCOUNT\b.*\bSTATS\b/i, points: 30, label: 'STATS COUNT' },
+        ],
+        expectedRowCount: 1,
+        rowCountTolerance: 1,
+      });
     },
     maxScore: 100,
     timeLimitMs: 30000,

@@ -2,6 +2,7 @@ import type {
   ElasticBackend,
   Document,
   SearchResponse,
+  EsqlResponse,
   SearchHit,
   IndexMapping,
   IngestPipeline,
@@ -61,6 +62,19 @@ export class SimulatedBackend implements ElasticBackend {
     const source = idx.documents.get(id);
     if (!source) return null;
     return { _id: id, _index: index, _source: source };
+  }
+
+  private goldenEsqlResponse: EsqlResponse | null = null;
+
+  setGoldenEsqlResponse(response: EsqlResponse): void {
+    this.goldenEsqlResponse = response;
+  }
+
+  async esqlQuery(_query: string): Promise<EsqlResponse> {
+    if (this.goldenEsqlResponse) {
+      return this.goldenEsqlResponse;
+    }
+    return { columns: [], values: [] };
   }
 
   async count(index: string, query?: Record<string, unknown>): Promise<number> {
@@ -1359,5 +1373,6 @@ export class SimulatedBackend implements ElasticBackend {
   async reset(): Promise<void> {
     this.indices.clear();
     this.pipelines.clear();
+    this.goldenEsqlResponse = null;
   }
 }
