@@ -38,9 +38,12 @@ interface ParsedArgs {
   interactive?: boolean;        // --pick flag for interactive selection
   apiUrl?: string;              // leaderboard API URL
   noSubmit?: boolean;           // skip leaderboard submission
+  noHints?: boolean;            // strip hints from prompts
   realEs?: boolean;             // auto-provision Elastic Cloud
   essApiKey?: string;           // Elastic Cloud API key
   essRegion?: string;           // Elastic Cloud region
+  skillContextPath?: string;    // path to SKILL.md for A/B benchmarking
+  language?: 'dsl' | 'esql';    // query language mode
 
   // Scenario mode flags
   scenarios?: boolean;          // --scenarios: run skill-aligned scenarios
@@ -104,6 +107,9 @@ function parseArgs(): ParsedArgs {
       case '--no-submit':
         result.noSubmit = true;
         break;
+      case '--no-hints':
+        result.noHints = true;
+        break;
       case '--real-es':
         result.realEs = true;
         break;
@@ -112,6 +118,12 @@ function parseArgs(): ParsedArgs {
         break;
       case '--ess-region':
         result.essRegion = args[++i];
+        break;
+      case '--skill-context':
+        result.skillContextPath = args[++i];
+        break;
+      case '--language':
+        result.language = args[++i] as 'dsl' | 'esql';
         break;
       case '--mode':
         result.mode = args[++i] as 'simulated' | 'real';
@@ -198,28 +210,33 @@ BENCHMARK OPTIONS:
   --pick, -p             Interactive model picker (uses OpenRouter)
   --api-key <key>        API key (or use env vars below)
   --base-url <url>       Custom API base URL (for OpenAI-compatible providers)
-   --domain <name>        Filter to domain (can repeat). Options:
-                            full-text-search, ingest-indexing, aggregations,
-                            observability, vector-search, security, esql
-   --difficulty <level>   Filter to difficulty (can repeat). Options:
-                            beginner, intermediate, advanced, expert
-   --verbose, -v          Show detailed feedback for failed challenges
-   --real-es              Auto-provision Elastic Cloud (requires ESS_API_KEY)
-   --start-local          Use Docker/Podman for local Elasticsearch (start-local)
-   --ess-api-key <key>    Elastic Cloud API key
-   --ess-region <region>  Elastic Cloud region (default: gcp-us-central1)
-   --no-submit            Skip submitting results to the public leaderboard
+  --domain <name>        Filter to domain (can repeat). Options:
+                           full-text-search, ingest-indexing, aggregations,
+                           observability, vector-search, security, esql
+  --difficulty <level>   Filter to difficulty (can repeat). Options:
+                           beginner, intermediate, advanced, expert
+  --verbose, -v          Show detailed feedback for failed challenges
+  --real-es              Auto-provision Elastic Cloud (requires ESS_API_KEY)
+  --start-local          Use Docker/Podman for local Elasticsearch (start-local)
+  --ess-api-key <key>    Elastic Cloud API key
+  --ess-region <region>  Elastic Cloud region (default: gcp-us-central1)
+  --no-submit            Skip submitting results to the public leaderboard
+  --no-hints             Strip all hints from prompts (raw difficulty mode)
+  --language <dsl|esql>  Query language mode (default: dsl)
+                         In esql mode, existing DSL challenges are run using ES|QL
+  --skill-context <path> Path to SKILL.md to inject as reference context
+                         (for A/B benchmarking with/without skill)
 
 SCENARIO OPTIONS (skill-aligned challenges):
-   --scenarios            Run skill-aligned scenarios (requires real ES)
-   --skills               Inject Elastic Agent Skills into prompts
-   --skills-path <path>   Path to agent-skills repo or installation
-   --compare-skills       Run scenarios with and without skills for comparison
-   --runs <N>             Run each scenario N times to measure consistency
+  --scenarios            Run skill-aligned scenarios (requires real ES)
+  --skills               Inject Elastic Agent Skills into prompts
+  --skills-path <path>   Path to agent-skills repo or installation
+  --compare-skills       Run scenarios with and without skills for comparison
+  --runs <N>             Run each scenario N times to measure consistency
 
 LICENSE OPTIONS (for enterprise-gated scenarios):
-   --license-file <path>  Upload an Enterprise/Platinum license to ES before benchmarking
-   --start-trial          Activate a 30-day trial license (once per major version)
+  --license-file <path>  Upload an Enterprise/Platinum license to ES before benchmarking
+  --start-trial          Activate a 30-day trial license (once per major version)
 
 PLAY MODE OPTIONS:
   --mode <simulated|real>  Backend mode (default: simulated)
@@ -246,15 +263,22 @@ EXAMPLES:
   # Filter to specific domain
   elastic-quest benchmark --pick --domain aggregations -v
 
-   # View results
-   elastic-quest leaderboard
-   elastic-quest compare openrouter:openai/gpt-4o openrouter:anthropic/claude-sonnet-4
+  # View results
+  elastic-quest leaderboard
+  elastic-quest compare openrouter:openai/gpt-4o openrouter:anthropic/claude-sonnet-4
 
-   # Skill-aligned scenarios (requires Docker or Elastic Cloud)
-   elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --start-local
-   elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --real-es
-   elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --skills --start-local
-   elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --compare-skills --start-local
+  # ES|QL language mode: run existing challenges using ES|QL
+  elastic-quest benchmark --pick --language esql
+  elastic-quest benchmark --pick --language esql --skill-context /path/to/SKILL.md
+
+  # ES|QL-only challenges (DISSECT, CATEGORIZE, etc.)
+  elastic-quest benchmark --pick --domain esql
+
+  # Skill-aligned scenarios (requires Docker or Elastic Cloud)
+  elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --start-local
+  elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --real-es
+  elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --skills --start-local
+  elastic-quest benchmark -m openrouter:openai/gpt-4o --scenarios --compare-skills --start-local
 `;
   process.stderr.write(help);
 }
@@ -461,6 +485,9 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
       if (parsed.runs && parsed.runs > 1) process.stderr.write(`  Runs: ${parsed.runs} (consistency mode)\n`);
       if (parsed.domains) process.stderr.write(`  Domains: ${parsed.domains.join(', ')}\n`);
       if (parsed.difficulties) process.stderr.write(`  Difficulties: ${parsed.difficulties.join(', ')}\n`);
+      if (parsed.language) process.stderr.write(`  Language: ${parsed.language}\n`);
+      if (parsed.noHints) process.stderr.write(`  Hints: disabled\n`);
+      if (parsed.skillContextPath) process.stderr.write(`  Skill context: ${parsed.skillContextPath}\n`);
       process.stderr.write(`${'═'.repeat(70)}\n\n`);
 
       try {
@@ -470,11 +497,14 @@ async function runBenchmark(parsed: ParsedArgs): Promise<void> {
           domains: parsed.domains,
           difficulties: parsed.difficulties,
           verbose: parsed.verbose,
-          backendMode: parsed.mode === 'real' ? 'real' : 'simulated',
+          backendMode: (parsed.realEs || parsed.esConfig?.node || parsed.startLocal) ? 'real' : 'simulated',
           esNode: parsed.esConfig?.node,
           esApiKey: parsed.esConfig?.apiKey,
           esUsername: parsed.esConfig?.username,
           esPassword: parsed.esConfig?.password,
+          skillContextPath: parsed.skillContextPath,
+          language: parsed.language,
+          noHints: parsed.noHints,
           scenarioMode: parsed.scenarios,
           skillsEnabled: parsed.skills,
           skillsPath: parsed.skillsPath,

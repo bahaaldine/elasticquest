@@ -6,3 +6,5 @@ dist/
 *.tgz
 .env
 .env.local
+run-benchmarks.sh
+run-ollama.sh

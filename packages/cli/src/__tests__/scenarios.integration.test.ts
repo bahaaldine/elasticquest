@@ -138,7 +138,7 @@ describe('ES|QL Queries on Real ES', () => {
   });
 
   itWithDocker('should run a basic FROM query', async () => {
-    const result = await backend!.esql!(
+    const result = await backend!.esqlQuery(
       'FROM eq-esql-articles | LIMIT 5',
     );
 
@@ -149,7 +149,7 @@ describe('ES|QL Queries on Real ES', () => {
   });
 
   itWithDocker('should run a WHERE filter query', async () => {
-    const result = await backend!.esql!(
+    const result = await backend!.esqlQuery(
       'FROM eq-esql-articles | WHERE category == "technology" | LIMIT 100',
     );
 
@@ -162,7 +162,7 @@ describe('ES|QL Queries on Real ES', () => {
   });
 
   itWithDocker('should run a STATS aggregation', async () => {
-    const result = await backend!.esql!(
+    const result = await backend!.esqlQuery(
       'FROM eq-esql-articles | STATS count = COUNT(*) BY category | SORT count DESC',
     );
 
@@ -177,7 +177,7 @@ describe('ES|QL Queries on Real ES', () => {
   });
 
   itWithDocker('should run an EVAL + CASE query', async () => {
-    const result = await backend!.esql!(
+    const result = await backend!.esqlQuery(
       'FROM eq-esql-articles ' +
         '| EVAL popularity = CASE(views >= 10000, "viral", views >= 5000, "popular", "normal") ' +
         '| KEEP title, views, popularity ' +
@@ -199,7 +199,7 @@ describe('ES|QL Queries on Real ES', () => {
   });
 
   itWithDocker('should run a STATS with multiple aggregations', async () => {
-    const result = await backend!.esql!(
+    const result = await backend!.esqlQuery(
       'FROM eq-esql-articles ' +
         '| STATS count = COUNT(*), avg_views = AVG(views), total_views = SUM(views) BY author ' +
         '| SORT total_views DESC ' +
@@ -246,7 +246,7 @@ describe('Scenario Validation E2E', () => {
       )!;
       expect(scenario).toBeDefined();
 
-      const result = await backend!.esql!(
+      const result = await backend!.esqlQuery(
         'FROM eq-esql-articles ' +
           '| WHERE category == "technology" ' +
           '| KEEP title, category, views ' +
@@ -267,7 +267,7 @@ describe('Scenario Validation E2E', () => {
         (s) => s.id === 'esql-2-stats-aggregation',
       )!;
 
-      const result = await backend!.esql!(
+      const result = await backend!.esqlQuery(
         'FROM eq-esql-articles ' +
           '| STATS count = COUNT(*), avg_views = AVG(views) BY category ' +
           '| SORT count DESC',
@@ -286,7 +286,7 @@ describe('Scenario Validation E2E', () => {
         (s) => s.id === 'esql-1-basic-filter',
       )!;
 
-      const result = await backend!.esql!(
+      const result = await backend!.esqlQuery(
         'FROM eq-esql-articles | LIMIT 10',
       );
 

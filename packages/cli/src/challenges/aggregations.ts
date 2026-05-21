@@ -1,4 +1,5 @@
-import type { Challenge, SearchResponse, ElasticBackend } from '../types';
+import type { Challenge, SearchResponse, ElasticBackend, EsqlResponse } from '../types';
+import { validateEsqlChallenge } from './esql-helpers';
 
 export const aggregationsChallenges: Challenge[] = [
   // --- BEGINNER ---
@@ -11,6 +12,7 @@ export const aggregationsChallenges: Challenge[] = [
 
 Fields: product_name (text), category (keyword), amount (float), region (keyword), sale_date (date).`,
     hints: ['Use size: 0', 'Name your aggregation "categories"', 'terms agg on "category" field'],
+    esqlHints: ['Use STATS COUNT(*) BY field to group and count', 'Group by the "category" field'],
     indexName: 'eq-sales',
     mapping: { properties: { product_name: { type: 'text' }, category: { type: 'keyword' }, amount: { type: 'float' }, region: { type: 'keyword' }, sale_date: { type: 'date' } } },
     seedData: [
@@ -38,6 +40,18 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
       const correct = correctBuckets === expected.size && response.hits.hits.length === 0;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Correct! electronics(3), furniture(3), office_supplies(2).' : `${correctBuckets}/${expected.size} counts correct.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 25, label: 'STATS' },
+          { pattern: /\bCOUNT\b/i, points: 25, label: 'COUNT' },
+          { pattern: /\bBY\b.*\bcategory\b/i, points: 25, label: 'BY category' },
+        ],
+        expectedColumns: ['category'],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -48,6 +62,7 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
     title: 'Average Order Value',
     description: `Calculate the average sale amount across all records. Use a metric aggregation named "avg_amount" on the "amount" field. Set size to 0.`,
     hints: ['Use avg aggregation on "amount" field', 'Name it "avg_amount"'],
+    esqlHints: ['Use STATS AVG(field) to compute the average', 'The field to average is "amount"'],
     indexName: 'eq-sales',
     mapping: { properties: { product_name: { type: 'text' }, category: { type: 'keyword' }, amount: { type: 'float' }, region: { type: 'keyword' } } },
     seedData: [
@@ -66,6 +81,16 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `Correct! Average amount is $${expectedAvg}.` : `Expected avg ~${expectedAvg}, got ${agg.value}.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 20, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 30, label: 'STATS' },
+          { pattern: /\bAVG\b.*\bamount\b/i, points: 30, label: 'AVG(amount)' },
+        ],
+        expectedRowCount: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -78,6 +103,7 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
     title: 'Aggregation with Query Filter',
     description: `Calculate the total (sum) revenue for the "electronics" category only. Use a query to filter to electronics, then a sum aggregation named "total_revenue" on the "amount" field. Set size to 0.`,
     hints: ['Filter with query.term on category first', 'Then use sum agg on amount'],
+    esqlHints: ['Use WHERE field == value to filter before aggregating', 'Use STATS SUM(field) to compute the total'],
     indexName: 'eq-sales',
     mapping: { properties: { product_name: { type: 'text' }, category: { type: 'keyword' }, amount: { type: 'float' } } },
     seedData: [
@@ -98,6 +124,18 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `Correct! Electronics total: $${expected}.` : `Expected $${expected}, got $${agg.value}.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 20, label: 'WHERE' },
+          { pattern: /electronics/i, points: 20, label: 'electronics filter' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bSUM\b.*\bamount\b/i, points: 20, label: 'SUM(amount)' },
+        ],
+        expectedRowCount: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -108,6 +146,7 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
     title: 'Count Unique Values',
     description: `Count the number of unique customers who placed orders. Use a cardinality aggregation named "unique_customers" on the "customer" field. Set size to 0.`,
     hints: ['Use cardinality aggregation for approximate distinct count', 'Field is "customer"'],
+    esqlHints: ['Use COUNT_DISTINCT(field) in STATS for approximate distinct count', 'The field is "customer"'],
     indexName: 'eq-orders',
     mapping: { properties: { order_id: { type: 'keyword' }, customer: { type: 'keyword' }, total: { type: 'float' }, status: { type: 'keyword' } } },
     seedData: [
@@ -127,6 +166,16 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Correct! 4 unique customers.' : `Expected 4, got ${agg.value}.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 20, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 25, label: 'STATS' },
+          { pattern: /\bCOUNT_DISTINCT\b.*\bcustomer\b/i, points: 40, label: 'COUNT_DISTINCT(customer)' },
+        ],
+        expectedRowCount: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -139,6 +188,7 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
     title: 'Revenue by Region with Stats',
     description: `Group sales by "region" (terms agg named "by_region"), then for each region compute stats on "amount" (stats agg named "amount_stats"). Set size to 0.`,
     hints: ['Nest stats agg inside terms agg', 'stats gives count, min, max, avg, sum'],
+    esqlHints: ['Use STATS with multiple aggregation functions (COUNT, MIN, MAX, AVG, SUM) grouped BY a field', 'Group by the region field to get per-region statistics'],
     indexName: 'eq-sales',
     mapping: { properties: { product_name: { type: 'text' }, category: { type: 'keyword' }, amount: { type: 'float' }, region: { type: 'keyword' }, sale_date: { type: 'date' } } },
     seedData: [
@@ -170,6 +220,18 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Nested stats per region computed correctly.' : `Score: ${score}/100. ${!hasStats ? 'Missing "amount_stats" sub-agg.' : 'Check structure.'}` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 25, label: 'STATS' },
+          { pattern: /\bBY\b.*\bregion\b/i, points: 25, label: 'BY region' },
+          { pattern: /\b(AVG|MIN|MAX|SUM|COUNT)\b/i, points: 20, label: 'aggregation function' },
+        ],
+        expectedColumns: ['region'],
+        expectedRowCount: 4,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -180,6 +242,7 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
     title: 'Monthly Sales Trend',
     description: `Create a date histogram of sales by month. Use a date_histogram aggregation named "monthly_sales" on the "sale_date" field with calendar_interval "month". For each month, also compute the sum of "amount" (named "revenue"). Size 0.`,
     hints: ['date_histogram with calendar_interval: "month"', 'Nest a sum agg inside'],
+    esqlHints: ['Use STATS ... BY BUCKET(@timestamp, 1 month) for monthly time buckets', 'Include a SUM aggregation inside the STATS'],
     indexName: 'eq-sales',
     mapping: { properties: { amount: { type: 'float' }, sale_date: { type: 'date' }, region: { type: 'keyword' } } },
     seedData: [
@@ -209,6 +272,18 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Monthly date histogram with revenue sub-agg correct.' : `Score: ${score}/100. Need monthly_sales -> revenue structure.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bSUM\b.*\bamount\b/i, points: 20, label: 'SUM(amount)' },
+          { pattern: /\b(BUCKET|DATE_TRUNC)\b/i, points: 25, label: 'BUCKET or DATE_TRUNC' },
+          { pattern: /month/i, points: 10, label: 'month interval' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -226,6 +301,7 @@ Fields: product_name (text), category (keyword), amount (float), region (keyword
 
 Size 0.`,
     hints: ['Three nested aggs: terms -> terms -> avg', 'Each level uses aggs/aggregations key'],
+    esqlHints: ['Use STATS with an aggregation function grouped BY multiple fields for multi-level breakdown', 'Group by two category fields and compute an average'],
     indexName: 'eq-sales',
     mapping: { properties: { category: { type: 'keyword' }, amount: { type: 'float' }, region: { type: 'keyword' } } },
     seedData: [
@@ -256,6 +332,20 @@ Size 0.`,
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? '3-level aggregation correct. North electronics avg = $400.' : `Score: ${score}/100. Build: by_region -> by_category -> avg_amount.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bAVG\b.*\bamount\b/i, points: 20, label: 'AVG(amount)' },
+          { pattern: /\bBY\b.*\bregion\b/i, points: 20, label: 'BY region' },
+          { pattern: /\bcategory\b/i, points: 15, label: 'category grouping' },
+        ],
+        expectedColumns: ['region', 'category'],
+        expectedRowCount: 4,
+        rowCountTolerance: 2,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -268,6 +358,7 @@ Size 0.`,
     title: 'Latency Percentiles (p50/p95/p99)',
     description: `Compute the p50, p95, and p99 of the "response_time_ms" field across all API requests. Use a percentiles aggregation named "latency_pcts" with percents [50, 95, 99]. Size 0.`,
     hints: ['Use percentiles agg with field and percents array', 'The result has a "values" object with the percentile keys'],
+    esqlHints: ['Use PERCENTILE(field, pct) in STATS to compute specific percentile values', 'Compute p50, p95, and p99 as separate PERCENTILE calls'],
     indexName: 'eq-requests',
     mapping: { properties: { endpoint: { type: 'keyword' }, response_time_ms: { type: 'integer' }, status: { type: 'integer' } } },
     seedData: [
@@ -296,6 +387,17 @@ Size 0.`,
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `Percentiles computed: p50=${values['50']}, p95=${values['95']}, p99=${values['99']}.` : `Score: ${score}/100. Need percentiles agg with percents [50, 95, 99].` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bPERCENTILE\b/i, points: 35, label: 'PERCENTILE' },
+          { pattern: /response_time_ms/i, points: 15, label: 'response_time_ms field' },
+        ],
+        expectedRowCount: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -311,6 +413,7 @@ Size 0.`,
 
 Size 0.`,
     hints: ['Use filters agg with named filters object (not array)', 'Each filter is a range query on status_code'],
+    esqlHints: ['Use STATS with per-aggregation WHERE to count each status range in a single row', 'e.g., success = COUNT(*) WHERE status_code >= 200 AND status_code <= 299'],
     indexName: 'eq-requests',
     mapping: { properties: { endpoint: { type: 'keyword' }, status_code: { type: 'integer' }, method: { type: 'keyword' } } },
     seedData: [
@@ -340,6 +443,18 @@ Size 0.`,
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Filters agg correctly categorizes: success(4), client_error(2), server_error(2).' : `Score: ${score}/100. Expected: success=4, client_error=2, server_error=2.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bCOUNT\b/i, points: 15, label: 'COUNT' },
+          { pattern: /\bCASE\b|\bstatus_code\b/i, points: 25, label: 'status code grouping' },
+        ],
+        expectedColumns: ['success', 'client_error', 'server_error'],
+        expectedRowCount: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -352,6 +467,7 @@ Size 0.`,
 
 The result tells you: "X% of requests are at or below 200ms."`,
     hints: ['percentile_ranks is the inverse of percentiles', 'It tells you what percentile a specific value falls at', 'values: [200] asks "what % of data is <= 200ms?"'],
+    esqlHints: ['ES|QL has no direct PERCENTILE_RANK — compute the percentage of values under the threshold manually', 'Use STATS with COUNT(*) WHERE field < threshold divided by total COUNT(*)'],
     indexName: 'eq-requests',
     mapping: { properties: { endpoint: { type: 'keyword' }, response_time_ms: { type: 'integer' } } },
     seedData: [
@@ -379,6 +495,18 @@ The result tells you: "X% of requests are at or below 200ms."`,
       if (values['200'] !== undefined && Math.abs(Number(values['200']) - 70) < 5) score += 20;
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `SLO compliance: ${values['200']}% of requests under 200ms.` : `Score: ${score}/100. Need percentile_ranks with values [200].` };
+    },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 25, label: 'STATS' },
+          { pattern: /response_time_ms/i, points: 20, label: 'response_time field' },
+          { pattern: /200/i, points: 15, label: '200ms threshold' },
+        ],
+        expectedRowCount: 1,
+        rowCountTolerance: 1,
+      });
     },
     maxScore: 100,
     timeLimitMs: 45000,

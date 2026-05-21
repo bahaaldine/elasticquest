@@ -1,5 +1,7 @@
 import type { Domain, Difficulty } from '../types';
 
+export const DEFAULT_SYSTEM_PROMPT = 'You are an Elasticsearch expert. When given a challenge, respond ONLY with a valid JSON object containing the Elasticsearch query body. No explanation, no markdown, just the JSON query object.';
+
 // --- Model Adapter ---
 
 export interface ModelAdapter {
@@ -9,9 +11,9 @@ export interface ModelAdapter {
   /**
    * Send a prompt to the model and get a response.
    * The prompt contains the challenge description and context.
-   * The model should return a JSON Elasticsearch query.
+   * An optional systemPrompt overrides the default DSL-oriented system message.
    */
-  complete(prompt: string): Promise<ModelResponse>;
+  complete(prompt: string, systemPrompt?: string): Promise<ModelResponse>;
 }
 
 export interface ModelResponse {
@@ -34,6 +36,9 @@ export interface BenchmarkConfig {
   esApiKey?: string;         // ES API key for real mode
   esUsername?: string;       // ES username
   esPassword?: string;       // ES password
+  skillContextPath?: string; // path to SKILL.md for context injection
+  language?: 'dsl' | 'esql';  // query language mode (default: dsl)
+  noHints?: boolean;           // strip all hints from prompts
 
   // Scenario mode (skill-aligned challenges)
   scenarioMode?: boolean;    // run scenarios instead of (or alongside) challenges
@@ -102,6 +107,8 @@ export interface BenchmarkResult {
   modelId: string;
   modelName: string;
   provider: string;
+  language: 'dsl' | 'esql';
+  hints: boolean;
   timestamp: number;
   totalScore: number;
   maxPossibleScore: number;
@@ -158,6 +165,8 @@ export interface LeaderboardRow {
   modelId: string;
   modelName: string;
   provider: string;
+  language: 'dsl' | 'esql';
+  hints: boolean;
   totalScore: number;
   maxScore: number;
   percentage: number;

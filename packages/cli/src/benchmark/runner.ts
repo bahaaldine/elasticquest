@@ -25,6 +25,8 @@ import { getAllChallenges } from '../challenges';
 import { getAllScenarios } from '../scenarios';
 import { loadSkill, formatSkillForPrompt } from '../skills';
 import { fetchOpenRouterModels } from './openrouter';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const SYSTEM_PROMPT = `You are being evaluated on your ability to write Elasticsearch queries.
 
@@ -41,13 +43,15 @@ Example response:
 
 const ESQL_SYSTEM_PROMPT = `You are being evaluated on your ability to write ES|QL (Elasticsearch Query Language) queries.
 
+ES|QL is a piped query language — NOT JSON Query DSL. It uses pipes (|) to chain commands.
+
 For each challenge, you'll receive:
 - A description of what to query
 - The index name and its mapping
 - Sample documents from the index
 
 Respond with ONLY a valid ES|QL query string — no markdown fences, no explanation, no commentary.
-Just the raw ES|QL query starting with FROM (or TS for time series).
+Just the raw ES|QL query starting with FROM (or TS for time series). Output exactly ONE query.
 
 Example response:
 FROM my-index | WHERE status == "active" | STATS count = COUNT(*) BY category | SORT count DESC | LIMIT 10`;
@@ -56,6 +60,7 @@ export class BenchmarkRunner {
   private model: ModelAdapter;
   private config: BenchmarkConfig;
   private backend: ElasticBackend;
+  private skillContext: string | null;
 
   constructor(model: ModelAdapter, config: BenchmarkConfig, backend?: ElasticBackend) {
     this.model = model;
@@ -73,6 +78,28 @@ export class BenchmarkRunner {
     } else {
       this.backend = new SimulatedBackend();
     }
+
+    this.skillContext = null;
+    if (config.skillContextPath) {
+      this.skillContext = this.loadSkillContext(config.skillContextPath);
+    }
+  }
+
+  private loadSkillContext(skillPath: string): string {
+    const parts: string[] = [];
+    const mainContent = fs.readFileSync(skillPath, 'utf-8');
+    parts.push(mainContent);
+
+    const refsDir = path.join(path.dirname(skillPath), 'references');
+    if (fs.existsSync(refsDir)) {
+      const refFiles = fs.readdirSync(refsDir).filter((f) => f.endsWith('.md')).sort();
+      for (const refFile of refFiles) {
+        const refContent = fs.readFileSync(path.join(refsDir, refFile), 'utf-8');
+        parts.push(`\n--- Reference: ${refFile} ---\n${refContent}`);
+      }
+    }
+
+    return parts.join('\n');
   }
 
   async run(): Promise<BenchmarkResult> {
@@ -120,7 +147,7 @@ export class BenchmarkRunner {
    * Can be run with or without skill content injection.
    */
   async runScenarios(): Promise<BenchmarkResult> {
-    if (this.backend.mode !== 'real' || !this.backend.esql) {
+    if (this.backend.mode !== 'real') {
       throw new Error(
         'Scenarios require a real Elasticsearch backend with ES|QL support.\n' +
           'Use --start-local (Docker) or --real-es (Elastic Cloud).',
@@ -424,7 +451,7 @@ export class BenchmarkRunner {
 
         // Step 4: Execute
         const execStart = Date.now();
-        validationResponse = await this.backend.esql!(esqlQuery);
+        validationResponse = await this.backend.esqlQuery(esqlQuery);
         const esqlResp = validationResponse as EsqlResponse;
         steps.push({
           name: 'execute',
@@ -610,74 +637,6 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
   }
 
   /**
-   * Extract an ES|QL query from model response.
-   * Handles raw text, markdown code blocks, and backtick-wrapped queries.
-   */
-  private extractEsql(text: string): string | null {
-    const trimmed = text.trim();
-
-    // Try extracting from markdown code block (```esql or ```sql or ```)
-    const codeBlockMatch = trimmed.match(
-      /```(?:esql|sql|elasticsearch)?\s*\n?([\s\S]*?)\n?```/,
-    );
-    if (codeBlockMatch) {
-      const query = codeBlockMatch[1].trim();
-      if (query.startsWith('FROM') || query.startsWith('TS')) {
-        // Normalize multi-line query: collapse newlines but preserve spaces
-        return query.split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
-      }
-    }
-
-    // Try the raw text — if it starts with FROM or TS, use it directly
-    if (trimmed.startsWith('FROM') || trimmed.startsWith('TS')) {
-      // Collect query lines, tracking open parens and continuation patterns
-      const lines = trimmed.split('\n');
-      const queryLines: string[] = [];
-      let openParens = 0;
-      for (let li = 0; li < lines.length; li++) {
-        const t = lines[li].trim();
-        if (
-          queryLines.length === 0 &&
-          (t.startsWith('FROM') || t.startsWith('TS'))
-        ) {
-          queryLines.push(t);
-          openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
-        } else if (queryLines.length > 0 && t.startsWith('|')) {
-          // Pipe continuation
-          queryLines.push(t);
-          openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
-          if (openParens < 0) openParens = 0;
-        } else if (queryLines.length > 0 && openParens > 0) {
-          // Inside open parentheses (multi-line CASE, function args)
-          if (t !== '') queryLines.push(t);
-          openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
-          if (openParens < 0) openParens = 0;
-        } else if (queryLines.length > 0 && t !== '' && this.isEsqlContinuation(t, queryLines)) {
-          // Continuation of a multi-line expression (STATS, BY, etc.)
-          queryLines.push(t);
-          openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
-          if (openParens < 0) openParens = 0;
-        } else if (queryLines.length > 0 && t === '') {
-          // Blank line ends the query (unless inside parens, handled above)
-          break;
-        } else if (queryLines.length > 0) {
-          // Non-continuation line = end of query
-          break;
-        }
-      }
-      if (queryLines.length > 0) return queryLines.join(' ');
-    }
-
-    // Try finding FROM ... pattern anywhere in the text
-    const fromMatch = trimmed.match(/(?:FROM|TS)\s+[\w*.-]+[\s\S]*?(?:LIMIT\s+\d+|$)/i);
-    if (fromMatch) {
-      return fromMatch[0].trim();
-    }
-
-    return null;
-  }
-
-  /**
    * Check if a line is a continuation of a multi-line ES|QL expression.
    * Handles STATS aggregation expressions, BY clauses, and comma-separated lists.
    */
@@ -848,12 +807,49 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
       durationMs: Date.now() - setupStart,
     });
 
+    // For ES|QL challenges in simulated mode, set the golden response
+    if (challenge.queryType === 'esql' && challenge.expectedEsqlResponse && this.backend.mode === 'simulated') {
+      (this.backend as SimulatedBackend).setGoldenEsqlResponse(challenge.expectedEsqlResponse);
+    }
+
+    const useEsql =
+      challenge.queryType === 'esql' ||
+      (this.config.language === 'esql' && !challenge.esqlIncompatible);
+
+    if (this.config.language === 'esql' && challenge.esqlIncompatible) {
+      return {
+        challengeId: challenge.id,
+        domain: challenge.domain,
+        difficulty: challenge.difficulty,
+        title: challenge.title,
+        score: 0,
+        maxScore: 0,
+        correct: false,
+        feedback: 'Skipped: challenge has no ES|QL equivalent.',
+        latencyMs: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        rawModelResponse: '',
+        parsedQuery: null,
+        error: null,
+      };
+    }
+
+    if (useEsql) {
+      return this.runEsqlChallenge(challenge);
+    }
+
+    return this.runDslChallenge(challenge);
+  }
+
+  private async runDslChallenge(challenge: Challenge): Promise<ChallengeScore> {
     let rawResponse = '';
     let parsedQuery: Record<string, unknown> | null = null;
     let latencyMs = 0;
     let inputTokens = 0;
     let outputTokens = 0;
     let error: string | null = null;
+    const steps: EvalStep[] = [];
 
     try {
       // Step 2: Prompt + Model call
@@ -1023,6 +1019,135 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
     }
   }
 
+  private async runEsqlChallenge(challenge: Challenge): Promise<ChallengeScore> {
+    let rawResponse = '';
+    let latencyMs = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let error: string | null = null;
+
+    try {
+      const esqlSystemPrompt = this.buildEsqlSystemPrompt();
+
+      // Multi-turn: first let the model explore, then ask for the ES|QL query
+      if (challenge.multiTurn && challenge.discoveryPrompt) {
+        const discoveryResponse = await this.model.complete(
+          challenge.discoveryPrompt + `\n\nINDEX: ${challenge.indexName}\n\nMAPPING:\n${JSON.stringify(challenge.mapping ?? {}, null, 2)}\n\nSAMPLE DOCUMENTS (first 2):\n${challenge.seedData.slice(0, 2).map((d) => JSON.stringify(d._source, null, 2)).join('\n')}`,
+          esqlSystemPrompt,
+        );
+        latencyMs += discoveryResponse.latencyMs;
+        inputTokens += discoveryResponse.inputTokens ?? 0;
+        outputTokens += discoveryResponse.outputTokens ?? 0;
+
+        const queryPrompt = this.buildEsqlUserPrompt(challenge) +
+          `\n\nYour earlier analysis of the data:\n${discoveryResponse.content}\n\nNow respond with ONLY the ES|QL query:`;
+
+        const response = await this.model.complete(queryPrompt, esqlSystemPrompt);
+        rawResponse = response.content;
+        latencyMs += response.latencyMs;
+        inputTokens += response.inputTokens ?? 0;
+        outputTokens += response.outputTokens ?? 0;
+      } else {
+        const prompt = this.buildEsqlUserPrompt(challenge);
+        const response = await this.model.complete(prompt, esqlSystemPrompt);
+        rawResponse = response.content;
+        latencyMs = response.latencyMs;
+        inputTokens = response.inputTokens ?? 0;
+        outputTokens = response.outputTokens ?? 0;
+      }
+
+      const esqlQuery = this.extractEsql(rawResponse);
+
+      if (!esqlQuery) {
+        return {
+          challengeId: challenge.id,
+          domain: challenge.domain,
+          difficulty: challenge.difficulty,
+          title: challenge.title,
+          score: 0,
+          maxScore: challenge.maxScore,
+          correct: false,
+          feedback: 'Failed to extract ES|QL query from model response.',
+          latencyMs,
+          inputTokens,
+          outputTokens,
+          rawModelResponse: rawResponse,
+          parsedQuery: null,
+          error: 'ES|QL parse error',
+        };
+      }
+
+      const esqlResponse: EsqlResponse = await this.backend.esqlQuery(esqlQuery);
+
+      if (!challenge.validateEsql) {
+        return {
+          challengeId: challenge.id,
+          domain: challenge.domain,
+          difficulty: challenge.difficulty,
+          title: challenge.title,
+          score: 0,
+          maxScore: challenge.maxScore,
+          correct: false,
+          feedback: 'No ES|QL validator defined for this challenge.',
+          latencyMs,
+          inputTokens,
+          outputTokens,
+          rawModelResponse: rawResponse,
+          parsedQuery: { esql: esqlQuery },
+          error: 'Missing validateEsql',
+        };
+      }
+
+      const validation = await challenge.validateEsql(esqlResponse, esqlQuery, this.backend);
+
+      const speedMultiplier = this.getSpeedMultiplier(latencyMs);
+      const adjustedScore = Math.min(
+        validation.maxScore,
+        Math.round(validation.score * speedMultiplier),
+      );
+      const speedNote = speedMultiplier > 1
+        ? ` Speed bonus: x${speedMultiplier} (${latencyMs}ms).`
+        : speedMultiplier < 1
+          ? ` Speed penalty: x${speedMultiplier} (${latencyMs}ms).`
+          : '';
+
+      return {
+        challengeId: challenge.id,
+        domain: challenge.domain,
+        difficulty: challenge.difficulty,
+        title: challenge.title,
+        score: adjustedScore,
+        maxScore: validation.maxScore,
+        correct: validation.correct,
+        feedback: validation.feedback + speedNote,
+        latencyMs,
+        inputTokens,
+        outputTokens,
+        rawModelResponse: rawResponse,
+        parsedQuery: { esql: esqlQuery },
+        error: null,
+      };
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      return {
+        challengeId: challenge.id,
+        domain: challenge.domain,
+        difficulty: challenge.difficulty,
+        title: challenge.title,
+        score: 0,
+        maxScore: challenge.maxScore,
+        correct: false,
+        feedback: `Error: ${error}`,
+        latencyMs,
+        inputTokens,
+        outputTokens,
+        rawModelResponse: rawResponse,
+        parsedQuery: null,
+        error,
+      };
+    }
+  }
+
   /**
    * Speed multiplier for scoring.
    * Rewards fast responses, penalizes very slow ones.
@@ -1051,7 +1176,12 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
       ? JSON.stringify(challenge.mapping, null, 2)
       : 'No explicit mapping';
 
-    return `${SYSTEM_PROMPT}
+    let systemPrompt = SYSTEM_PROMPT;
+    if (this.skillContext) {
+      systemPrompt += `\n\n--- SKILL REFERENCE ---\n${this.skillContext}\n--- END SKILL REFERENCE ---`;
+    }
+
+    return `${systemPrompt}
 
 ---
 
@@ -1069,11 +1199,99 @@ ${mappingStr}
 
 SAMPLE DOCUMENTS (first 3 of ${challenge.seedData.length}):
 ${sampleDocs}
-
-HINTS:
-${challenge.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}
-
+${this.config.noHints ? '' : `\nHINTS:\n${challenge.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}\n`}
 Respond with ONLY the JSON query body for the _search API:`;
+  }
+
+  private buildEsqlSystemPrompt(): string {
+    let systemPrompt = ESQL_SYSTEM_PROMPT;
+    if (this.skillContext) {
+      systemPrompt += `\n\n--- SKILL REFERENCE ---\n${this.skillContext}\n--- END SKILL REFERENCE ---`;
+    }
+    return systemPrompt;
+  }
+
+  private buildEsqlUserPrompt(challenge: Challenge): string {
+    const sampleDocs = challenge.seedData
+      .slice(0, 3)
+      .map((d) => JSON.stringify(d._source, null, 2))
+      .join('\n');
+
+    const mappingStr = challenge.mapping
+      ? JSON.stringify(challenge.mapping, null, 2)
+      : 'No explicit mapping';
+
+    return `CHALLENGE: ${challenge.title}
+DOMAIN: ${challenge.domain}
+DIFFICULTY: ${challenge.difficulty}
+
+DESCRIPTION:
+${challenge.description}
+
+INDEX: ${challenge.indexName}
+
+MAPPING:
+${mappingStr}
+
+SAMPLE DOCUMENTS (first 3 of ${challenge.seedData.length}):
+${sampleDocs}
+${this.config.noHints ? '' : `\nHINTS:\n${(challenge.esqlHints ?? challenge.hints).map((h, i) => `${i + 1}. ${h}`).join('\n')}\n`}
+Respond with ONLY the ES|QL query string:`;
+  }
+
+  extractEsql(text: string): string | null {
+    const trimmed = text.trim();
+
+    // Try extracting from markdown code block (```esql, ```sql, or bare ```)
+    const codeBlockMatch = trimmed.match(/```(?:esql|sql|)?\s*\n?([\s\S]*?)\n?```/);
+    if (codeBlockMatch) {
+      const content = codeBlockMatch[1].trim();
+      if (content.length > 0) return content;
+    }
+
+    // Extract the first contiguous ES|QL query from the text.
+    // A query starts with a source command (FROM, ROW, SHOW, METRICS, TS)
+    // and continues on pipe lines, open-paren continuations, comma-separated
+    // lists, BY clauses, aggregation expressions, and AND/OR conditions.
+    const lines = trimmed.split('\n');
+    const queryLines: string[] = [];
+    let openParens = 0;
+
+    for (const line of lines) {
+      const t = line.trim();
+
+      if (queryLines.length === 0) {
+        if (/^(FROM|ROW|SHOW|METRICS|TS)\b/i.test(t)) {
+          queryLines.push(t);
+          openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
+        }
+        continue;
+      }
+
+      if (t === '') {
+        if (openParens > 0) continue;
+        break;
+      }
+
+      if (t.startsWith('|')) {
+        queryLines.push(t);
+      } else if (openParens > 0) {
+        queryLines.push(t);
+      } else if (this.isEsqlContinuation(t, queryLines)) {
+        queryLines.push(t);
+      } else {
+        break;
+      }
+
+      openParens += (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
+      if (openParens < 0) openParens = 0;
+    }
+
+    if (queryLines.length > 0) {
+      return queryLines.join('\n').trim();
+    }
+
+    return null;
   }
 
   private extractJson(text: string): Record<string, unknown> | null {
@@ -1171,10 +1389,15 @@ Respond with ONLY the JSON query body for the _search API:`;
       costUsd = await this.computeCost(orModelId, totalInputTokens, totalOutputTokens);
     }
 
+    const language = this.config.language === 'esql' ? 'esql' as const : 'dsl' as const;
+    const hints = !this.config.noHints;
+
     return {
       modelId: this.config.modelId,
       modelName: this.model.name,
       provider: this.model.provider,
+      language,
+      hints,
       timestamp: Date.now(),
       totalScore,
       maxPossibleScore,

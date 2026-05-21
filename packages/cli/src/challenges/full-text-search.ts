@@ -1,4 +1,5 @@
-import type { Challenge, SearchResponse, ElasticBackend } from '../types';
+import type { Challenge, SearchResponse, ElasticBackend, EsqlResponse } from '../types';
+import { validateEsqlChallenge } from './esql-helpers';
 
 export const fullTextSearchChallenges: Challenge[] = [
   // --- BEGINNER ---
@@ -10,6 +11,10 @@ export const fullTextSearchChallenges: Challenge[] = [
     description: `You have an index of blog articles. Write a query to find all articles that mention "elasticsearch" in the title or body field. Return them sorted by relevance.`,
     hints: [
       'Use a multi_match query to search across multiple fields',
+      'The fields are "title" and "body"',
+    ],
+    esqlHints: [
+      'Use MATCH or QSTR to search across text fields',
       'The fields are "title" and "body"',
     ],
     indexName: 'eq-articles',
@@ -45,6 +50,16 @@ export const fullTextSearchChallenges: Challenge[] = [
           : `Found ${found.length}/${expectedIds.length} relevant articles. ${falsePositives.length} false positive(s).`,
       };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 30, label: 'FROM' },
+          { pattern: /elasticsearch/i, points: 40, label: 'search term' },
+        ],
+        expectedRowCount: 4,
+        rowCountTolerance: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -57,6 +72,10 @@ export const fullTextSearchChallenges: Challenge[] = [
     hints: [
       'Use a term query for exact matching on keyword fields',
       'term queries are not analyzed - the value must match exactly',
+    ],
+    esqlHints: [
+      'Use WHERE with == for exact matching on keyword fields',
+      'The value must match exactly — keyword fields are not analyzed',
     ],
     indexName: 'eq-articles',
     mapping: {
@@ -84,6 +103,16 @@ export const fullTextSearchChallenges: Challenge[] = [
       const score = Math.floor((found.length / expectedIds.length) * 85) - falsePositives.length * 15;
       return { correct, score: Math.max(0, score), maxScore: 100, feedback: correct ? 'Found all articles by alice.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} false positives.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 30, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 30, label: 'WHERE' },
+          { pattern: /author\b.*==?\s*"alice"/i, points: 30, label: 'author filter' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -96,6 +125,10 @@ export const fullTextSearchChallenges: Challenge[] = [
     hints: [
       'Use a match query with operator: "and"',
       'This ensures all terms must be present',
+    ],
+    esqlHints: [
+      'Use MATCH with {"operator": "AND"} to require all terms',
+      'This ensures both words must be present in the field',
     ],
     indexName: 'eq-articles',
     mapping: {
@@ -121,6 +154,17 @@ export const fullTextSearchChallenges: Challenge[] = [
       const score = Math.floor((found.length / expectedIds.length) * 85) - falsePositives.length * 15;
       return { correct, score: Math.max(0, score), maxScore: 100, feedback: correct ? 'Found all articles containing both "search" and "engine".' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} false positives.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 20, label: 'FROM' },
+          { pattern: /search/i, points: 20, label: 'search term' },
+          { pattern: /engine/i, points: 20, label: 'engine term' },
+        ],
+        expectedRowCount: 3,
+        rowCountTolerance: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -140,6 +184,10 @@ Return matching documents.`,
     hints: [
       'Use a bool query with must, should, and filter clauses',
       'Use a term query to filter by exact keyword fields like author and tags',
+    ],
+    esqlHints: [
+      'Combine conditions with AND in WHERE for required filters',
+      'Use == for exact matching on keyword fields like author',
     ],
     indexName: 'eq-articles',
     mapping: {
@@ -176,6 +224,17 @@ Return matching documents.`,
           : `Found ${found.length}/${expectedIds.length} expected articles. ${falsePositives.length} false positive(s).`,
       };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 20, label: 'WHERE' },
+          { pattern: /alice/i, points: 20, label: 'alice filter' },
+          { pattern: /elasticsearch/i, points: 20, label: 'elasticsearch search' },
+        ],
+        expectedRowCount: 2,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -188,6 +247,10 @@ Return matching documents.`,
     hints: [
       'Use bool.must for the match on body',
       'Use bool.must_not with a term query on tags',
+    ],
+    esqlHints: [
+      'Use WHERE with MATCH or LIKE for text search on body',
+      'Use AND NOT or != to exclude specific tag values',
     ],
     indexName: 'eq-articles',
     mapping: {
@@ -213,6 +276,18 @@ Return matching documents.`,
       const score = Math.floor((found.length / expectedIds.length) * 85) - falsePositives.length * 15;
       return { correct, score: Math.max(0, score), maxScore: 100, feedback: correct ? 'Correct! Found data articles excluding devops.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} false positives.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 20, label: 'WHERE' },
+          { pattern: /data/i, points: 15, label: 'data search' },
+          { pattern: /devops/i, points: 15, label: 'devops exclusion' },
+          { pattern: /\bNOT\b|!=|<>/i, points: 20, label: 'NOT/exclusion' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -227,6 +302,10 @@ Use multi_match with fields: ["title^3", "body"].`,
     hints: [
       'Use multi_match with field boosting: title^3',
       'Set size: 3 to limit results',
+    ],
+    esqlHints: [
+      'Use MATCH or QSTR with field boosting for relevance ranking',
+      'Use LIMIT 3 to return only the top results',
     ],
     indexName: 'eq-articles',
     mapping: {
@@ -256,6 +335,18 @@ Use multi_match with fields: ["title^3", "body"].`,
       const correct = hits.length <= 3 && hits.length > 0 && hits[0]._id === '1';
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Correct! Title-boosted results rank the best title match first.' : `Doc 1 should rank first (best title match). Got: ${hits.map((h) => h._id).join(', ')}` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 20, label: 'FROM' },
+          { pattern: /security/i, points: 20, label: 'security term' },
+          { pattern: /best\s*practices/i, points: 20, label: 'best practices term' },
+          { pattern: /\bLIMIT\s+3\b/i, points: 20, label: 'LIMIT 3' },
+        ],
+        expectedRowCount: 3,
+        rowCountTolerance: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -275,6 +366,11 @@ Use a bool query combining a match_phrase and range query.`,
       'Use match_phrase for exact phrase matching in the body field',
       'Use a range query with gte and lte on published_date',
       'Combine them with a bool must clause',
+    ],
+    esqlHints: [
+      'Use MATCH_PHRASE for exact phrase matching on the body field',
+      'Use WHERE with >= and <= on published_date for the date range',
+      'Combine text search and date filter with AND in WHERE',
     ],
     indexName: 'eq-articles',
     mapping: {
@@ -301,6 +397,18 @@ Use a bool query combining a match_phrase and range query.`,
       const score = Math.floor((found.length / expectedIds.length) * 85) - falsePositives.length * 15;
       return { correct, score: Math.max(0, Math.min(100, score)), maxScore: 100, feedback: correct ? 'Found all articles with "distributed search" within the date range.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} false positives. match_phrase requires words to appear together.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 20, label: 'WHERE' },
+          { pattern: /distributed\s+search/i, points: 25, label: 'search terms' },
+          { pattern: /2024/i, points: 15, label: 'date filter' },
+        ],
+        expectedRowCount: 3,
+        rowCountTolerance: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -317,6 +425,10 @@ Use a bool query with wildcard and exists clauses.`,
     hints: [
       'Use a wildcard query on the sku field with value "ELEC-*"',
       'Use an exists query to check that description is present',
+    ],
+    esqlHints: [
+      'Use LIKE or STARTS_WITH on the sku field to match the prefix pattern',
+      'Use IS NOT NULL to check that the description field exists',
     ],
     indexName: 'eq-products',
     mapping: {
@@ -344,6 +456,17 @@ Use a bool query with wildcard and exists clauses.`,
       const score = Math.floor((found.length / expectedIds.length) * 85) - falsePositives.length * 15;
       return { correct, score: Math.max(0, score), maxScore: 100, feedback: correct ? 'Found all ELEC-* products with descriptions.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} false positives. Doc 3 (Mouse) has no description.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 20, label: 'WHERE' },
+          { pattern: /ELEC/i, points: 20, label: 'ELEC prefix' },
+          { pattern: /\b(LIKE|STARTS_WITH|RLIKE)\b|description\s+IS\s+NOT\s+NULL/i, points: 20, label: 'wildcard/exists' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -365,6 +488,11 @@ Use a bool query with wildcard and exists clauses.`,
       'Use a bool query with must, must_not, should, and filter',
       'Use term for boolean and keyword fields, range for salary_max',
       'must_not with range: salary_max lt 100000 excludes low-salary jobs',
+    ],
+    esqlHints: [
+      'Combine required conditions with AND in WHERE (text match, boolean, range, keyword)',
+      'For optional relevance boosting, use QSTR with Lucene syntax (+field:required field:optional^boost)',
+      'salary_max >= 100000 excludes low-salary jobs',
     ],
     indexName: 'eq-jobs',
     mapping: {
@@ -404,6 +532,20 @@ Use a bool query with wildcard and exists clauses.`,
 
       return { correct: correctContent, score: Math.max(0, Math.min(100, score)), maxScore: 100, feedback: correctContent ? 'Complex bool query returned correct results.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} false positives. Check: remote=true, salary>=100k, dept=engineering, title has "engineer".` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 15, label: 'WHERE' },
+          { pattern: /engineer/i, points: 15, label: 'engineer filter' },
+          { pattern: /remote/i, points: 15, label: 'remote filter' },
+          { pattern: /100000|100_000/i, points: 15, label: 'salary filter' },
+          { pattern: /engineering/i, points: 15, label: 'department filter' },
+        ],
+        expectedRowCount: 4,
+        rowCountTolerance: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -416,6 +558,10 @@ Use a bool query with wildcard and exists clauses.`,
     title: 'Fuzzy Search for Typo Tolerance',
     description: `Users often misspell search terms. Find products matching the misspelled term "headhpones" (intended: "headphones") using a fuzzy query on the "name" field with fuzziness of 2.`,
     hints: ['Use a fuzzy query on the name field', 'Set fuzziness: 2 to allow 2 character edits'],
+    esqlHints: [
+      'Use MATCH with {"fuzziness": "AUTO"} or QSTR with fuzzy syntax (~) for typo tolerance',
+      'Fuzzy matching allows character edits to find close matches',
+    ],
     indexName: 'eq-products',
     mapping: { properties: { name: { type: 'text' }, category: { type: 'keyword' }, price: { type: 'float' } } },
     seedData: [
@@ -433,6 +579,16 @@ Use a bool query with wildcard and exists clauses.`,
       const correct = found.length >= 2; // At least 2 of the 3 headphone docs
       const score = Math.floor((found.length / expectedIds.length) * 100);
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `Fuzzy search found ${found.length} headphone products despite typo.` : `Expected headphone products. Fuzzy query should match "headhpones" -> "headphones".` };
+    },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 30, label: 'FROM' },
+          { pattern: /headphones|headhpones/i, points: 40, label: 'search term' },
+        ],
+        expectedRowCount: 2,
+        rowCountTolerance: 2,
+      });
     },
     maxScore: 100,
     timeLimitMs: 30000,
@@ -467,6 +623,7 @@ dis_max is better than bool when one field has a strong match and the other is w
     },
     maxScore: 100,
     timeLimitMs: 45000,
+    esqlIncompatible: true,
   },
   {
     id: 'fts-12-boosting',
@@ -509,6 +666,7 @@ This keeps beginner articles in results but ranks them lower.`,
     },
     maxScore: 100,
     timeLimitMs: 45000,
+    esqlIncompatible: true,
   },
   {
     id: 'fts-13-nested',
@@ -561,6 +719,7 @@ Use:
     },
     maxScore: 100,
     timeLimitMs: 60000,
+    esqlIncompatible: true,
   },
   {
     id: 'fts-14-function-score',
@@ -600,5 +759,6 @@ This makes higher-rated laptops rank higher in results.`,
     },
     maxScore: 100,
     timeLimitMs: 60000,
+    esqlIncompatible: true,
   },
 ];

@@ -1,4 +1,6 @@
 import type { Challenge, SearchResponse, ElasticBackend } from '../types';
+import type { EsqlResponse } from '../types';
+import { validateEsqlChallenge } from './esql-helpers';
 
 export const observabilityChallenges: Challenge[] = [
   {
@@ -8,6 +10,7 @@ export const observabilityChallenges: Challenge[] = [
     title: 'Filter Error Logs',
     description: `Find all ERROR-level logs. The "level" field is a keyword. Simply filter to level "ERROR".`,
     hints: ['Use a term query on the "level" keyword field'],
+    esqlHints: ['Use WHERE level == "error" for exact matching on keyword fields'],
     indexName: 'eq-logs',
     mapping: { properties: { '@timestamp': { type: 'date' }, level: { type: 'keyword' }, service: { type: 'keyword' }, message: { type: 'text' }, status_code: { type: 'integer' } } },
     seedData: [
@@ -26,6 +29,16 @@ export const observabilityChallenges: Challenge[] = [
       const score = Math.floor((found.length / expectedIds.length) * 85) - falsePositives.length * 15;
       return { correct, score: Math.max(0, score), maxScore: 100, feedback: correct ? 'Found all 3 ERROR logs.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} false positives.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 30, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 30, label: 'WHERE' },
+          { pattern: /ERROR/i, points: 30, label: 'ERROR filter' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -41,6 +54,7 @@ export const observabilityChallenges: Challenge[] = [
 - Range: @timestamp between "2024-03-09T00:00:00Z" and "2024-03-10T00:00:00Z"
 - Sort by @timestamp descending (newest first)`,
     hints: ['Bool query with filter clauses', 'sort: [{"@timestamp": "desc"}]'],
+    esqlHints: ['Combine conditions with AND in WHERE for service name and log level', 'Use SORT @timestamp DESC for most recent first'],
     indexName: 'eq-logs',
     mapping: { properties: { '@timestamp': { type: 'date' }, level: { type: 'keyword' }, service: { type: 'keyword' }, message: { type: 'text' }, trace_id: { type: 'keyword' }, status_code: { type: 'integer' } } },
     seedData: [
@@ -65,6 +79,19 @@ export const observabilityChallenges: Challenge[] = [
       if (correctOrder) score += 30;
       return { correct: correctContent && correctOrder, score: Math.max(0, Math.min(100, score)), maxScore: 100, feedback: correctContent && correctOrder ? 'Found 3 errors from payment-service, sorted newest first.' : `Content: ${found.length}/${expectedIds.length}, ${falsePositives.length} FP. Order: ${correctOrder ? 'ok' : 'should be desc'}.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 15, label: 'WHERE' },
+          { pattern: /ERROR/i, points: 15, label: 'ERROR filter' },
+          { pattern: /payment-service/i, points: 15, label: 'service filter' },
+          { pattern: /2024-03-09|2024-03-10/i, points: 15, label: 'date filter' },
+          { pattern: /\bSORT\b/i, points: 15, label: 'SORT' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -76,6 +103,7 @@ export const observabilityChallenges: Challenge[] = [
     title: 'Error Rate by Service',
     description: `Analyze error distribution: group by "service" (terms, named "by_service"), then by "level" (terms, named "by_level"). Size 0.`,
     hints: ['Nest terms on "level" inside terms on "service"'],
+    esqlHints: ['Use STATS COUNT(*) BY service.name, level to group by both fields', 'This gives a breakdown of log levels per service'],
     indexName: 'eq-logs',
     mapping: { properties: { '@timestamp': { type: 'date' }, level: { type: 'keyword' }, service: { type: 'keyword' }, message: { type: 'text' }, status_code: { type: 'integer' } } },
     seedData: [
@@ -108,6 +136,19 @@ export const observabilityChallenges: Challenge[] = [
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Nested service/level aggregation correct.' : `Score: ${score}/100. Build: by_service -> by_level.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 25, label: 'STATS' },
+          { pattern: /\bCOUNT\b/i, points: 15, label: 'COUNT' },
+          { pattern: /\bBY\b.*\bservice\b/i, points: 20, label: 'BY service' },
+          { pattern: /\blevel\b/i, points: 15, label: 'level grouping' },
+        ],
+        expectedRowCount: 5,
+        rowCountTolerance: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -119,6 +160,7 @@ export const observabilityChallenges: Challenge[] = [
     title: 'HTTP Status Code Analysis',
     description: `Find all logs with HTTP status codes in the 5xx range (500-599). These indicate server errors. Sort by @timestamp descending.`,
     hints: ['Use range query on status_code: gte 500, lt 600'],
+    esqlHints: ['Use WHERE status_code >= 500 AND status_code < 600 for range filtering'],
     indexName: 'eq-logs',
     mapping: { properties: { '@timestamp': { type: 'date' }, level: { type: 'keyword' }, service: { type: 'keyword' }, message: { type: 'text' }, status_code: { type: 'integer' } } },
     seedData: [
@@ -138,6 +180,17 @@ export const observabilityChallenges: Challenge[] = [
       const score = Math.floor((found.length / expectedIds.length) * 85) - falsePositives.length * 15;
       return { correct, score: Math.max(0, score), maxScore: 100, feedback: correct ? 'Found all 5xx errors.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} FP. Range: 500 <= status_code < 600.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 20, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 20, label: 'WHERE' },
+          { pattern: /status_code/i, points: 20, label: 'status_code field' },
+          { pattern: /500|5\d\d/i, points: 20, label: '5xx range' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 30000,
   },
@@ -151,6 +204,7 @@ export const observabilityChallenges: Challenge[] = [
 - filter: level = "ERROR"
 - must: match the message field with "timeout connection" (default OR operator)`,
     hints: ['match query defaults to OR operator', 'Combine with bool filter for level'],
+    esqlHints: ['Use MATCH for text search on the message field', 'Combine with AND and == for the level filter in WHERE'],
     indexName: 'eq-logs',
     mapping: { properties: { '@timestamp': { type: 'date' }, level: { type: 'keyword' }, service: { type: 'keyword' }, message: { type: 'text' }, status_code: { type: 'integer' } } },
     seedData: [
@@ -170,6 +224,18 @@ export const observabilityChallenges: Challenge[] = [
       const score = Math.floor((found.length / expectedIds.length) * 85) - falsePositives.length * 15;
       return { correct, score: Math.max(0, score), maxScore: 100, feedback: correct ? 'Found all ERROR logs mentioning timeout or connection.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} FP.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 15, label: 'WHERE' },
+          { pattern: /ERROR/i, points: 15, label: 'ERROR filter' },
+          { pattern: /timeout/i, points: 15, label: 'timeout search' },
+          { pattern: /connection/i, points: 15, label: 'connection search' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -185,6 +251,7 @@ export const observabilityChallenges: Challenge[] = [
 2. For each service, compute p50, p95, p99 of "duration_ms" (percentiles agg named "latency_pcts" with percents [50, 95, 99])
 3. Size 0 (no hits needed)`,
     hints: ['Nest a percentiles agg inside a terms agg', 'percents: [50, 95, 99]'],
+    esqlHints: ['Use STATS with PERCENTILE(field, pct) grouped BY service.name', 'Compute p50, p95, and p99 as separate PERCENTILE calls'],
     indexName: 'eq-apm',
     mapping: { properties: { '@timestamp': { type: 'date' }, 'service.name': { type: 'keyword' }, duration_ms: { type: 'integer' }, status: { type: 'keyword' }, endpoint: { type: 'keyword' } } },
     seedData: [
@@ -224,6 +291,19 @@ export const observabilityChallenges: Challenge[] = [
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Latency percentiles per service computed correctly.' : `Score: ${score}/100. Need: by_service -> latency_pcts (percentiles with percents [50,95,99]).` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bPERCENTILE\b/i, points: 25, label: 'PERCENTILE' },
+          { pattern: /\bBY\b.*service/i, points: 20, label: 'BY service' },
+          { pattern: /duration_ms/i, points: 10, label: 'duration_ms field' },
+        ],
+        expectedRowCount: 3,
+        rowCountTolerance: 2,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -239,6 +319,7 @@ export const observabilityChallenges: Challenge[] = [
 
 The resulting buckets show how many errors occurred each hour — the tallest bucket is your incident window.`,
     hints: ['Use a bool filter for level=ERROR, then date_histogram in aggs', 'fixed_interval: "1h"'],
+    esqlHints: ['Use WHERE to filter for ERROR level, then STATS COUNT(*) BY time bucket', 'Use BUCKET(@timestamp, 1 hour) for hourly grouping'],
     indexName: 'eq-logs',
     mapping: { properties: { '@timestamp': { type: 'date' }, level: { type: 'keyword' }, service: { type: 'keyword' }, message: { type: 'text' } } },
     seedData: [
@@ -267,6 +348,19 @@ The resulting buckets show how many errors occurred each hour — the tallest bu
       const correct = score >= 80;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `Error spike detected: ${maxBucket?.doc_count} errors in peak hour.` : `Score: ${score}/100. Filter to ERROR first, then date_histogram with fixed_interval "1h".` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bWHERE\b.*ERROR/i, points: 20, label: 'ERROR filter' },
+          { pattern: /\bSTATS\b/i, points: 15, label: 'STATS' },
+          { pattern: /\bCOUNT\b/i, points: 15, label: 'COUNT' },
+          { pattern: /\b(BUCKET|DATE_TRUNC)\b/i, points: 20, label: 'time bucketing' },
+        ],
+        expectedRowCount: 3,
+        rowCountTolerance: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -283,6 +377,7 @@ The resulting buckets show how many errors occurred each hour — the tallest bu
 
 Traces with service_count > 1 indicate failures that cascaded across services.`,
     hints: ['Bool filter on status=error', 'terms on trace_id -> cardinality on service.name'],
+    esqlHints: ['Use WHERE to filter for error status, then STATS COUNT_DISTINCT(service.name) BY trace_id', 'This finds traces that span multiple services'],
     indexName: 'eq-traces',
     mapping: { properties: { '@timestamp': { type: 'date' }, trace_id: { type: 'keyword' }, 'service.name': { type: 'keyword' }, span_name: { type: 'keyword' }, duration_ms: { type: 'integer' }, status: { type: 'keyword' } } },
     seedData: [
@@ -318,6 +413,18 @@ Traces with service_count > 1 indicate failures that cascaded across services.`,
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Cross-service trace failures identified correctly.' : `Score: ${score}/100. Filter status=error, then terms on trace_id -> cardinality on service.name.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bWHERE\b.*error/i, points: 15, label: 'error filter' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bCOUNT_DISTINCT\b/i, points: 25, label: 'COUNT_DISTINCT' },
+          { pattern: /\bBY\b.*trace_id/i, points: 15, label: 'BY trace_id' },
+        ],
+        expectedRowCount: 2,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -331,6 +438,7 @@ Traces with service_count > 1 indicate failures that cascaded across services.`,
 2. Use a terms aggregation named "top_errors" on "message.keyword" to find the most frequent error messages
 3. Size 0`,
     hints: ['Filter with bool.filter term level=ERROR', 'Use terms agg on message.keyword (not message — keyword gives exact strings)'],
+    esqlHints: ['Use WHERE level == "ERROR" to filter, then STATS COUNT(*) BY message', 'Use SORT count DESC | LIMIT N for the top error messages'],
     indexName: 'eq-logs',
     mapping: { properties: { '@timestamp': { type: 'date' }, level: { type: 'keyword' }, service: { type: 'keyword' }, message: { type: 'text', fields: { keyword: { type: 'keyword' } } } } },
     seedData: [
@@ -360,6 +468,19 @@ Traces with service_count > 1 indicate failures that cascaded across services.`,
       const correct = score >= 85;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `Top error: "${agg.buckets[0]?.key}" (${agg.buckets[0]?.doc_count}x).` : `Score: ${score}/100. Filter to ERROR first, then terms on message.keyword.` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bWHERE\b.*ERROR/i, points: 15, label: 'ERROR filter' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bCOUNT\b/i, points: 20, label: 'COUNT' },
+          { pattern: /\bBY\b.*message/i, points: 15, label: 'BY message' },
+          { pattern: /\bSORT\b/i, points: 10, label: 'SORT' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 45000,
   },
@@ -377,6 +498,7 @@ Traces with service_count > 1 indicate failures that cascaded across services.`,
 
 This shows what percentage of requests per service are successful (2xx) vs server errors (5xx).`,
     hints: ['terms on service.name -> filters agg with named filters', 'Each filter is a range query on status_code', 'Named filters use an object, not array'],
+    esqlHints: ['Use STATS with per-aggregation WHERE to count success and failure ranges per service', 'e.g., success = COUNT(*) WHERE status_code >= 200 AND status_code < 300, failure = COUNT(*) WHERE status_code >= 500 AND status_code < 600 ... BY service.name'],
     indexName: 'eq-apm',
     mapping: { properties: { '@timestamp': { type: 'date' }, 'service.name': { type: 'keyword' }, endpoint: { type: 'keyword' }, status_code: { type: 'integer' }, duration_ms: { type: 'integer' } } },
     seedData: [
@@ -409,6 +531,19 @@ This shows what percentage of requests per service are successful (2xx) vs serve
       if (failureBucket?.doc_count === 1) score += 20;
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? `SLO: api-gateway ${successBucket?.doc_count}/${(successBucket?.doc_count ?? 0) + (failureBucket?.doc_count ?? 0)} success. payment-service check nested outcomes.` : `Score: ${score}/100. Need: by_service -> outcomes (filters with "success" 2xx range and "failure" 5xx range).` };
+    },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bCOUNT\b/i, points: 15, label: 'COUNT' },
+          { pattern: /service/i, points: 15, label: 'service grouping' },
+          { pattern: /status_code/i, points: 15, label: 'status code' },
+        ],
+        expectedRowCount: 2,
+        rowCountTolerance: 4,
+      });
     },
     maxScore: 100,
     timeLimitMs: 60000,

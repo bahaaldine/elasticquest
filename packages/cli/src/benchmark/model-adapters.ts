@@ -1,5 +1,7 @@
 import type { ModelAdapter, ModelResponse } from './types';
+import { DEFAULT_SYSTEM_PROMPT } from './types';
 import { OpenRouterAdapter } from './openrouter';
+import { retryFetch } from './retry';
 
 // --- OpenAI-compatible adapter (works with OpenAI, Azure, OpenRouter, etc.) ---
 
@@ -21,9 +23,9 @@ export class OpenAIAdapter implements ModelAdapter {
     }
   }
 
-  async complete(prompt: string): Promise<ModelResponse> {
+  async complete(prompt: string, systemPrompt?: string): Promise<ModelResponse> {
     const start = Date.now();
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await retryFetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -34,7 +36,7 @@ export class OpenAIAdapter implements ModelAdapter {
         messages: [
           {
             role: 'system',
-            content: 'You are an Elasticsearch expert. When given a challenge, respond ONLY with a valid JSON object containing the Elasticsearch query body. No explanation, no markdown, just the JSON query object.',
+            content: systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
           },
           { role: 'user', content: prompt },
         ],
@@ -82,9 +84,9 @@ export class AnthropicAdapter implements ModelAdapter {
     }
   }
 
-  async complete(prompt: string): Promise<ModelResponse> {
+  async complete(prompt: string, systemPrompt?: string): Promise<ModelResponse> {
     const start = Date.now();
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await retryFetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -95,7 +97,7 @@ export class AnthropicAdapter implements ModelAdapter {
         model: this.model,
         max_tokens: 2048,
         temperature: 0,
-        system: 'You are an Elasticsearch expert. When given a challenge, respond ONLY with a valid JSON object containing the Elasticsearch query body. No explanation, no markdown, just the JSON query object.',
+        system: systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -137,14 +139,15 @@ export class OllamaAdapter implements ModelAdapter {
     this.baseUrl = baseUrl ?? process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434';
   }
 
-  async complete(prompt: string): Promise<ModelResponse> {
+  async complete(prompt: string, systemPrompt?: string): Promise<ModelResponse> {
     const start = Date.now();
-    const response = await fetch(`${this.baseUrl}/api/generate`, {
+    const system = systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
+    const response = await retryFetch(`${this.baseUrl}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: this.model,
-        prompt: `You are an Elasticsearch expert. When given a challenge, respond ONLY with a valid JSON object containing the Elasticsearch query body. No explanation, no markdown, just the JSON query object.\n\n${prompt}`,
+        prompt: `${system}\n\n${prompt}`,
         stream: false,
         options: { temperature: 0 },
       }),

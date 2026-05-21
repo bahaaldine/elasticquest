@@ -46,12 +46,19 @@ export class BenchmarkStore {
     return [...this.results];
   }
 
+  private static resultKey(result: BenchmarkResult): string {
+    const lang = result.language ?? 'dsl';
+    const hints = result.hints !== false ? 'hints' : 'nohints';
+    return `${result.modelId}|${lang}|${hints}`;
+  }
+
   getBestPerModel(): Map<string, BenchmarkResult> {
     const best = new Map<string, BenchmarkResult>();
     for (const result of this.results) {
-      const existing = best.get(result.modelId);
+      const key = BenchmarkStore.resultKey(result);
+      const existing = best.get(key);
       if (!existing || result.totalScore > existing.totalScore) {
-        best.set(result.modelId, result);
+        best.set(key, result);
       }
     }
     return best;
@@ -61,7 +68,7 @@ export class BenchmarkStore {
     const best = this.getBestPerModel();
     const rows: LeaderboardRow[] = [];
 
-    for (const [modelId, result] of best) {
+    for (const [, result] of best) {
       const domainScores: Record<string, number> = {};
       for (const ds of result.domainScores) {
         domainScores[ds.domain] = ds.percentage;
@@ -69,9 +76,11 @@ export class BenchmarkStore {
 
       rows.push({
         rank: 0, // Will be set after sorting
-        modelId,
+        modelId: result.modelId,
         modelName: result.modelName,
         provider: result.provider,
+        language: result.language ?? 'dsl',
+        hints: result.hints !== false,
         totalScore: result.totalScore,
         maxScore: result.maxPossibleScore,
         percentage: result.percentage,
@@ -89,14 +98,22 @@ export class BenchmarkStore {
     return rows;
   }
 
+  getBestForModel(modelId: string): BenchmarkResult | undefined {
+    return this.results
+      .filter((r) => r.modelId === modelId)
+      .reduce<BenchmarkResult | undefined>(
+        (best, r) => (!best || r.totalScore > best.totalScore ? r : best),
+        undefined,
+      );
+  }
+
   getModelComparison(modelA: string, modelB: string): {
     a: BenchmarkResult | undefined;
     b: BenchmarkResult | undefined;
   } {
-    const best = this.getBestPerModel();
     return {
-      a: best.get(modelA),
-      b: best.get(modelB),
+      a: this.getBestForModel(modelA),
+      b: this.getBestForModel(modelB),
     };
   }
 }
@@ -108,50 +125,51 @@ export function formatLeaderboard(rows: LeaderboardRow[]): string {
 
   const lines: string[] = [];
   lines.push('');
-  lines.push('╔══════════════════════════════════════════════════════════════════════════════════════╗');
-  lines.push('║                          ELASTICQUEST MODEL LEADERBOARD                            ║');
-  lines.push('╠══════════════════════════════════════════════════════════════════════════════════════╣');
+  lines.push('╔═══════════════════════════════════════════════════════════════════════════════════════════════════╗');
+  lines.push('║                                ELASTICQUEST MODEL LEADERBOARD                                   ║');
+  lines.push('╠═══════════════════════════════════════════════════════════════════════════════════════════════════╣');
   lines.push('');
 
-  // Header
-  const hdr = `  ${'#'.padEnd(4)}${'Model'.padEnd(30)}${'Score'.padEnd(10)}${'Pass'.padEnd(8)}${'%'.padEnd(7)}${'Latency'.padEnd(10)}`;
+  const hdr = `  ${'#'.padEnd(4)}${'Model'.padEnd(28)}${'Lang'.padEnd(6)}${'Hints'.padEnd(7)}${'Score'.padEnd(12)}${'Pass'.padEnd(8)}${'%'.padEnd(7)}${'Latency'.padEnd(10)}`;
   lines.push(hdr);
   lines.push('  ' + '─'.repeat(hdr.length - 2));
 
   for (const row of rows) {
     const rank = String(row.rank).padEnd(4);
-    const model = `${row.provider}:${row.modelName}`.substring(0, 28).padEnd(30);
-    const score = `${row.totalScore}/${row.maxScore}`.padEnd(10);
+    const model = row.modelName.substring(0, 26).padEnd(28);
+    const lang = (row.language ?? 'dsl').toUpperCase().padEnd(6);
+    const hints = (row.hints !== false ? 'yes' : 'no').padEnd(7);
+    const score = `${row.totalScore}/${row.maxScore}`.padEnd(12);
     const pass = `${row.correct}/${row.total}`.padEnd(8);
     const pct = `${row.percentage}%`.padEnd(7);
     const latency = `${row.avgLatencyMs}ms`.padEnd(10);
-    lines.push(`  ${rank}${model}${score}${pass}${pct}${latency}`);
+    lines.push(`  ${rank}${model}${lang}${hints}${score}${pass}${pct}${latency}`);
   }
 
   lines.push('');
 
-  // Domain breakdown for top models
   if (rows.length > 0) {
     lines.push('  Domain Breakdown (% correct):');
-    lines.push('  ' + '─'.repeat(70));
-    const domains = ['full-text-search', 'ingest-indexing', 'aggregations', 'observability', 'vector-search'];
-    const domainLabels = ['Search', 'Ingest', 'Aggs', 'Observability', 'Vector'];
+    lines.push('  ' + '─'.repeat(90));
+    const domains = ['full-text-search', 'ingest-indexing', 'aggregations', 'observability', 'security', 'esql'];
+    const domainLabels = ['Search', 'Ingest', 'Aggs', 'Obs', 'Security', 'ES|QL'];
 
-    const dHdr = `  ${'Model'.padEnd(25)}${domainLabels.map((d) => d.padEnd(14)).join('')}`;
+    const dHdr = `  ${'Model'.padEnd(22)}${'Mode'.padEnd(14)}${domainLabels.map((d) => d.padEnd(10)).join('')}`;
     lines.push(dHdr);
 
-    for (const row of rows.slice(0, 10)) {
-      const model = `${row.provider}:${row.modelName}`.substring(0, 23).padEnd(25);
+    for (const row of rows.slice(0, 15)) {
+      const model = row.modelName.substring(0, 20).padEnd(22);
+      const mode = `${(row.language ?? 'dsl').toUpperCase()}/${row.hints !== false ? 'hints' : 'raw'}`.padEnd(14);
       const domainPcts = domains.map((d) => {
         const pct = row.domainScores[d];
-        return pct !== undefined ? `${pct}%`.padEnd(14) : '—'.padEnd(14);
+        return pct !== undefined ? `${pct}%`.padEnd(10) : '—'.padEnd(10);
       }).join('');
-      lines.push(`  ${model}${domainPcts}`);
+      lines.push(`  ${model}${mode}${domainPcts}`);
     }
   }
 
   lines.push('');
-  lines.push('╚══════════════════════════════════════════════════════════════════════════════════════╝');
+  lines.push('╚═══════════════════════════════════════════════════════════════════════════════════════════════════╝');
   lines.push('');
 
   return lines.join('\n');

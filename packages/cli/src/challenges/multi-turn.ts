@@ -1,4 +1,6 @@
 import type { Challenge, SearchResponse, ElasticBackend } from '../types';
+import type { EsqlResponse } from '../types';
+import { validateEsqlChallenge } from './esql-helpers';
 
 /**
  * Multi-turn challenges: the model first explores the data (mapping + sample docs),
@@ -15,6 +17,11 @@ export const multiTurnChallenges: Challenge[] = [
       'First examine the mapping to understand field names and types',
       'Look at sample documents to see what data looks like',
       'Then construct a bool query with match + range',
+    ],
+    esqlHints: [
+      'First examine the mapping to understand field names and types',
+      'Look at sample documents to see what data looks like',
+      'Then construct a WHERE clause combining MATCH for text and >= / <= for ranges',
     ],
     indexName: 'eq-mystery-articles',
     mapping: {
@@ -48,6 +55,18 @@ export const multiTurnChallenges: Challenge[] = [
       const correct = found.length === expectedIds.length && falsePositives.length === 0;
       return { correct, score: Math.max(0, Math.min(100, score)), maxScore: 100, feedback: correct ? 'Correctly discovered schema and found ML articles from 2024.' : `Found ${found.length}/${expectedIds.length}. ${falsePositives.length} FP. Note: field names are headline/content/pub_date (not title/body/date).` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 15, label: 'FROM' },
+          { pattern: /machine\s*learning/i, points: 25, label: 'ML search' },
+          { pattern: /2024/i, points: 20, label: '2024 filter' },
+          { pattern: /\bWHERE\b|\bMATCH\b/i, points: 20, label: 'WHERE or MATCH' },
+        ],
+        expectedRowCount: 3,
+        rowCountTolerance: 1,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -61,6 +80,10 @@ export const multiTurnChallenges: Challenge[] = [
       'Examine the mapping to find the region and revenue field names',
       'They might not be called "region" and "revenue" — check the actual field names',
       'Use terms agg on the region field, sum agg on the revenue field',
+    ],
+    esqlHints: [
+      'Examine the mapping to find the correct field names — they might not be called "region" and "revenue"',
+      'Use STATS SUM(field) BY group_field for grouped aggregation',
     ],
     indexName: 'eq-mystery-sales',
     mapping: {
@@ -101,6 +124,18 @@ export const multiTurnChallenges: Challenge[] = [
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Correctly discovered "sales_region" and "sale_amount" fields and aggregated.' : `Score: ${score}/100. Key discovery: region field is "sales_region", revenue is "sale_amount".` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bSTATS\b/i, points: 20, label: 'STATS' },
+          { pattern: /\bSUM\b/i, points: 20, label: 'SUM' },
+          { pattern: /sale_amount/i, points: 20, label: 'sale_amount field' },
+          { pattern: /sales_region/i, points: 15, label: 'sales_region field' },
+        ],
+        expectedRowCount: 3,
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -116,6 +151,11 @@ Hint: the field names may not follow ECS conventions.`,
       'Field names might be non-standard (e.g., "severity" instead of "level")',
       'Examine the mapping carefully to find timestamp, severity, and service fields',
       'Write a bool query with term filter + range on the timestamp field',
+    ],
+    esqlHints: [
+      'Field names might be non-standard (e.g., "severity" instead of "level")',
+      'Examine the mapping carefully to find timestamp, severity, and service fields',
+      'Use WHERE with == and >= / <= to filter by field values and time ranges',
     ],
     indexName: 'eq-mystery-logs',
     mapping: {
@@ -155,6 +195,17 @@ Hint: the field names may not follow ECS conventions.`,
       const correct = correctContent && correctOrder;
       return { correct, score: Math.max(0, Math.min(100, score)), maxScore: 100, feedback: correct ? 'Discovered non-standard fields (ts, severity, svc) and queried correctly.' : `Found ${found.length}/${expectedIds.length}. Key: timestamp is "ts", level is "severity" (lowercase "error"), not "@timestamp"/"level".` };
     },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 15, label: 'WHERE' },
+          { pattern: /severity/i, points: 15, label: 'severity field' },
+          { pattern: /error/i, points: 15, label: 'error value' },
+          { pattern: /\bSORT\b.*\bts\b/i, points: 20, label: 'SORT ts' },
+        ],
+      });
+    },
     maxScore: 100,
     timeLimitMs: 60000,
   },
@@ -168,6 +219,11 @@ Hint: the field names may not follow ECS conventions.`,
       'First discover what fields exist and what they are called',
       'The IP field and action field may have non-obvious names',
       'Filter to failed logins first, then terms agg with min_doc_count: 3',
+    ],
+    esqlHints: [
+      'First discover what fields exist — the IP and action fields may have non-obvious names',
+      'Filter to failed logins first, then STATS COUNT(*) BY the IP field',
+      'Use WHERE count >= 3 or HAVING equivalent to find repeat offenders',
     ],
     indexName: 'eq-mystery-auth',
     mapping: {
@@ -206,6 +262,20 @@ Hint: the field names may not follow ECS conventions.`,
       if (ips.includes('172.16.0.5')) score += 15;
       const correct = score >= 90;
       return { correct, score: Math.min(100, score), maxScore: 100, feedback: correct ? 'Investigation complete: found 2 suspicious IPs (192.168.1.100, 172.16.0.5) with 3+ failed attempts.' : `Score: ${score}/100. Key: field is "src_addr", failures have outcome="failure". Use min_doc_count:3.` };
+    },
+    validateEsql: async (response: EsqlResponse, query: string) => {
+      return validateEsqlChallenge(response, query, {
+        requiredPatterns: [
+          { pattern: /\bFROM\b/i, points: 10, label: 'FROM' },
+          { pattern: /\bWHERE\b/i, points: 10, label: 'WHERE' },
+          { pattern: /outcome/i, points: 15, label: 'outcome field' },
+          { pattern: /failure/i, points: 15, label: 'failure value' },
+          { pattern: /\bSTATS\b/i, points: 15, label: 'STATS' },
+          { pattern: /\bBY\b.*src_addr/i, points: 15, label: 'BY src_addr' },
+          { pattern: /\bHAVING\b|\bWHERE\b.*>=?\s*3/i, points: 10, label: 'min count filter' },
+        ],
+        expectedRowCount: 2,
+      });
     },
     maxScore: 100,
     timeLimitMs: 90000,
