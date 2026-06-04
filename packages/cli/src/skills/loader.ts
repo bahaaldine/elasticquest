@@ -75,10 +75,10 @@ const SKILL_PATHS: Record<string, string> = {
  */
 function findSkillsRoot(explicitPath?: string): string | null {
   if (explicitPath) {
-    if (fs.existsSync(explicitPath)) return explicitPath;
-    // Check if it's a repo root with a skills/ subdirectory
+    // Check if it's a repo root with a skills/ subdirectory first
     const skillsSub = path.join(explicitPath, 'skills');
     if (fs.existsSync(skillsSub)) return skillsSub;
+    if (fs.existsSync(explicitPath)) return explicitPath;
     return null;
   }
 
