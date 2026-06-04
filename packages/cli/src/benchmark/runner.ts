@@ -618,7 +618,7 @@ ${scenario.hints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
     if (this.config.skillsEnabled) {
       const skill = loadSkill(scenario.skillId, {
         skillsPath: this.config.skillsPath,
-        referencePaths: scenario.skillReferencePaths,
+        referencePaths: scenario.skillReferencePaths ?? [],
       });
       if (skill) {
         prompt += '\n\n' + formatSkillForPrompt(skill, {
